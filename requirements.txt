@@ -1,0 +1,17 @@
+# Bluetooth support for Python
+# Using pybluez2 which is a maintained fork
+pybluez2>=0.46
+
+# Testing dependencies (TDD is mandatory)
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-mock>=3.11.0
+
+# Alternative: If pybluez2 doesn't work, try:
+# bleak>=0.21.0  # For BLE support
+# pyserial>=3.5  # For serial port communication
+
+# Additional dependencies for the virtual printer
+# Note: System-level bluetooth libraries are also required:
+# Linux: sudo apt-get install bluetooth libbluetooth-dev python3-dev
+# macOS: brew install bluez

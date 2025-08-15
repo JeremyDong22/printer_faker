@@ -1,0 +1,15 @@
+{
+  "receipt_id": "0f149e7b-fe10-4bae-9f63-af5b1864f16f",
+  "type": "kitchen_order",
+  "timestamp": "2025-08-15T00:51:08.741246",
+  "raw_text": "制作分单\n\n桌号: B区-B2\n档口: 荤菜\n\n菜品 数量\n乌鱼片 1/份\n\n单号: 140877542508140036\n操作人: 顾客/系统\n时间: 2025-08-14 18:45:11\n\n\n\n\n\n",
+  "metadata": {
+    "table": "B区-B2",
+    "order_no": "140877542508140036",
+    "operator": "顾客/系统",
+    "time": "2025-08-14 18:45:11",
+    "kitchen_station": "荤菜"
+  },
+  "items": [],
+  "financial": {}
+}

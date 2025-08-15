@@ -1,0 +1,23 @@
+[Unit]
+Description=Printer API Service - POS Receipt Capture
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+User=smartahc
+WorkingDirectory=/home/smartahc/smartice/printer_faker
+Environment="PATH=/home/smartahc/.local/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/home/smartahc/.local/bin/uv run python3 /home/smartahc/smartice/printer_faker/printer_api_service.py
+StandardOutput=append:/home/smartahc/smartice/printer_faker/logs/service.log
+StandardError=append:/home/smartahc/smartice/printer_faker/logs/service_error.log
+
+# Restart configuration
+StartLimitBurst=5
+StartLimitInterval=60s
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,251 @@
+{
+  "receipt_id": "874fac3d-d108-4e70-bba0-6a514748b49b",
+  "type": "checkout_bill",
+  "timestamp": "2025-08-15T00:51:08.746132",
+  "raw_text": "结账单\n野百灵·贵州酸汤火锅（1958店）\n\n桌号: 包间-包间\n订单流水号: 0021\n人数: 6\n类型: 堂食\n结账时间: 2025-08-14 19:53:15\n单号: 140877542508140021\n\n品项 数量 小计 优惠价\n糟辣椒炒饭               1份     22     22\n铁棍山药面               1份     12     12\n无粉紙巾                 2盒      4      4\n怪噜洋芋                 1份     18     18\n血皮菜                   1份     16     16\n藕                       1份     12     12\n山药                     1份     12     12\n甜笋（刺身级）           1份     16     16\n加多宝（听）             3听     15     15\n-做法:冰 3\n(赠)柠檬山茶             1份     18      0\n野刺梨山茶               1份     18     18\n云山雪花吊龙             1份     88     88\n雪顶冰淇淋玉米粑         1份     22     22\n火烧云铜锅油焖鸡         1份     68     68\n野菜卷                   1份     18     18\n彩云土豆                 1份     12     12\n鲜黄花                   1份     16     16\n薄荷                     1份     12     12\n野篮子菌菇组合           1份     48     48\n乌鱼片                   1份     28     28\n海鲜拼盘                 1份     68     68\n净水鲜虾                 1份     38     38\n木姜子鸡爪               1份     32     32\n贵州非遗丝娃娃           1份     28     28\n糯米午餐肉               1份     18     18\n黑松露和牛开口笑         1份     28     28\n糊辣椒鲜黄牛匙仁         1份     38     38\n野蒜酥五花趾             1份     38     38\n木姜子鲜黄牛肉           1份     42     42\n紫苏半边云（鲜牛胸口）      1份     38     38\n柠檬山茶                 1份     18     18\n老凯里非遗酸汤           1份     38     38\n非遗手工蘸料             6位     30     30\n\n菜品价格合计 929\n订单金额 929\n可开票金额 911\n\n已退菜品 数量\n大瓶北冰洋 3\n退菜原因:错点\n\n赠菜 -18\n应付金额 911\n\n扫码支付-微信 911\n支付合计 911\n\n支付优惠 0\n\n扫码支付-微信收入 911\n订单收入 911\n\n下单人: 刘运（管理员）\n下单时间: 2025-08-14 17:00:51\n打印时间: 2025-08-14 19:53:15\n\n\n\n\n\n",
+  "metadata": {
+    "store_name": "野百灵·贵州酸汤火锅（1958店）\n\n桌号: 包间-包间\n订单流水号: 0021\n人数: 6\n类型: 堂食\n结账时间: 2025-08-14 19:53:15\n单号: 140877542508140021\n\n品项 数量 小计 优惠价\n糟辣椒炒饭               1份     22     22\n铁棍山药面               1份     12     12\n无粉紙巾                 2盒      4      4\n怪噜洋芋                 1份     18     18\n血皮菜                   1份     16     16\n藕                       1份     12     12\n山药                     1份     12     12\n甜笋（刺身级）           1份     16     16\n加多宝（听）             3听     15     15\n-做法:冰 3\n(赠)柠檬山茶             1份     18      0\n野刺梨山茶               1份     18     18\n云山雪花吊龙             1份     88     88\n雪顶冰淇淋玉米粑         1份     22     22\n火烧云铜锅油焖鸡         1份     68     68\n野菜卷                   1份     18     18\n彩云土豆                 1份     12     12\n鲜黄花                   1份     16     16\n薄荷                     1份     12     12\n野篮子菌菇组合           1份     48     48\n乌鱼片                   1份     28     28\n海鲜拼盘                 1份     68     68\n净水鲜虾                 1份     38     38\n木姜子鸡爪               1份     32     32\n贵州非遗丝娃娃           1份     28     28\n糯米午餐肉               1份     18     18\n黑松露和牛开口笑         1份     28     28\n糊辣椒鲜黄牛匙仁         1份     38     38\n野蒜酥五花趾             1份     38     38\n木姜子鲜黄牛肉           1份     42     42\n紫苏半边云（鲜牛胸口）      1份     38     38\n柠檬山茶                 1份     18     18\n老凯里非遗酸汤           1份     38     38\n非遗手工蘸料             6位     30     30\n\n菜品价格合计 929\n订单金额 929\n可开票金额 911\n\n已退菜品 数量\n大瓶北冰洋 3\n退菜原因:错点\n\n赠菜 -18\n应付金额 911\n\n扫码支付-微信 911\n支付合计 911\n\n支付优惠 0\n\n扫码支付-微信收入 911\n订单收入 911\n\n下单人: 刘运（管理员）\n下单时间: 2025-08-14 17:00:51\n打印时间: 2025-08-14 19:53:15",
+    "table": "包间-包间",
+    "order_no": "140877542508140021",
+    "time": "2025-08-14 19:53:15",
+    "checkout_time": "2025-08-14 19:53:15",
+    "order_serial": "0021",
+    "people_count": 6
+  },
+  "items": [
+    {
+      "name": "糟辣椒炒饭",
+      "quantity": 1,
+      "unit": "份",
+      "original_price": 22.0,
+      "discount_price": 22.0
+    },
+    {
+      "name": "铁棍山药面",
+      "quantity": 1,
+      "unit": "份",
+      "original_price": 12.0,
+      "discount_price": 12.0
+    },
+    {
+      "name": "无粉紙巾",
+      "quantity": 2,
+      "unit": "盒",
+      "original_price": 4.0,
+      "discount_price": 4.0
+    },
+    {
+      "name": "怪噜洋芋",
+      "quantity": 1,
+      "unit": "份",
+      "original_price": 18.0,
+      "discount_price": 18.0
+    },
+    {
+      "name": "血皮菜",
+      "quantity": 1,
+      "unit": "份",
+      "original_price": 16.0,
+      "discount_price": 16.0
+    },
+    {
+      "name": "藕",
+      "quantity": 1,
+      "unit": "份",
+      "original_price": 12.0,
+      "discount_price": 12.0
+    },
+    {
+      "name": "山药",
+      "quantity": 1,
+      "unit": "份",
+      "original_price": 12.0,
+      "discount_price": 12.0
+    },
+    {
+      "name": "甜笋（刺身级）",
+      "quantity": 1,
+      "unit": "份",
+      "original_price": 16.0,
+      "discount_price": 16.0
+    },
+    {
+      "name": "加多宝（听）",
+      "quantity": 3,
+      "unit": "听",
+      "original_price": 15.0,
+      "discount_price": 15.0
+    },
+    {
+      "name": "(赠)柠檬山茶",
+      "quantity": 1,
+      "unit": "份",
+      "original_price": 18.0,
+      "discount_price": 0.0
+    },
+    {
+      "name": "野刺梨山茶",
+      "quantity": 1,
+      "unit": "份",
+      "original_price": 18.0,
+      "discount_price": 18.0
+    },
+    {
+      "name": "云山雪花吊龙",
+      "quantity": 1,
+      "unit": "份",
+      "original_price": 88.0,
+      "discount_price": 88.0
+    },
+    {
+      "name": "雪顶冰淇淋玉米粑",
+      "quantity": 1,
+      "unit": "份",
+      "original_price": 22.0,
+      "discount_price": 22.0
+    },
+    {
+      "name": "火烧云铜锅油焖鸡",
+      "quantity": 1,
+      "unit": "份",
+      "original_price": 68.0,
+      "discount_price": 68.0
+    },
+    {
+      "name": "野菜卷",
+      "quantity": 1,
+      "unit": "份",
+      "original_price": 18.0,
+      "discount_price": 18.0
+    },
+    {
+      "name": "彩云土豆",
+      "quantity": 1,
+      "unit": "份",
+      "original_price": 12.0,
+      "discount_price": 12.0
+    },
+    {
+      "name": "鲜黄花",
+      "quantity": 1,
+      "unit": "份",
+      "original_price": 16.0,
+      "discount_price": 16.0
+    },
+    {
+      "name": "薄荷",
+      "quantity": 1,
+      "unit": "份",
+      "original_price": 12.0,
+      "discount_price": 12.0
+    },
+    {
+      "name": "野篮子菌菇组合",
+      "quantity": 1,
+      "unit": "份",
+      "original_price": 48.0,
+      "discount_price": 48.0
+    },
+    {
+      "name": "乌鱼片",
+      "quantity": 1,
+      "unit": "份",
+      "original_price": 28.0,
+      "discount_price": 28.0
+    },
+    {
+      "name": "海鲜拼盘",
+      "quantity": 1,
+      "unit": "份",
+      "original_price": 68.0,
+      "discount_price": 68.0
+    },
+    {
+      "name": "净水鲜虾",
+      "quantity": 1,
+      "unit": "份",
+      "original_price": 38.0,
+      "discount_price": 38.0
+    },
+    {
+      "name": "木姜子鸡爪",
+      "quantity": 1,
+      "unit": "份",
+      "original_price": 32.0,
+      "discount_price": 32.0
+    },
+    {
+      "name": "贵州非遗丝娃娃",
+      "quantity": 1,
+      "unit": "份",
+      "original_price": 28.0,
+      "discount_price": 28.0
+    },
+    {
+      "name": "糯米午餐肉",
+      "quantity": 1,
+      "unit": "份",
+      "original_price": 18.0,
+      "discount_price": 18.0
+    },
+    {
+      "name": "黑松露和牛开口笑",
+      "quantity": 1,
+      "unit": "份",
+      "original_price": 28.0,
+      "discount_price": 28.0
+    },
+    {
+      "name": "糊辣椒鲜黄牛匙仁",
+      "quantity": 1,
+      "unit": "份",
+      "original_price": 38.0,
+      "discount_price": 38.0
+    },
+    {
+      "name": "野蒜酥五花趾",
+      "quantity": 1,
+      "unit": "份",
+      "original_price": 38.0,
+      "discount_price": 38.0
+    },
+    {
+      "name": "木姜子鲜黄牛肉",
+      "quantity": 1,
+      "unit": "份",
+      "original_price": 42.0,
+      "discount_price": 42.0
+    },
+    {
+      "name": "紫苏半边云（鲜牛胸口）",
+      "quantity": 1,
+      "unit": "份",
+      "original_price": 38.0,
+      "discount_price": 38.0
+    },
+    {
+      "name": "柠檬山茶",
+      "quantity": 1,
+      "unit": "份",
+      "original_price": 18.0,
+      "discount_price": 18.0
+    },
+    {
+      "name": "老凯里非遗酸汤",
+      "quantity": 1,
+      "unit": "份",
+      "original_price": 38.0,
+      "discount_price": 38.0
+    },
+    {
+      "name": "非遗手工蘸料",
+      "quantity": 6,
+      "unit": "位",
+      "original_price": 30.0,
+      "discount_price": 30.0
+    }
+  ],
+  "financial": {
+    "should_pay": 911.0
+  }
+}
