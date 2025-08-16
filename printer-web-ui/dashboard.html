@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="title">智能打印机管理系统</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            /* Restaurant-inspired color scheme */
+            --primary-warm: #8B4513;        /* Warm brown */
+            --primary-light: #D2B48C;       /* Tan/beige */
+            --primary-dark: #5D2A0A;        /* Dark brown */
+            --accent-blue: #4A5568;         /* Muted blue-gray */
+            --accent-cream: #FAF5F0;        /* Warm cream */
+            --accent-gold: #D4AF37;         /* Gold accent */
+            --text-dark: #2D3748;           /* Dark text */
+            --text-light: #718096;          /* Light gray text */
+            --bg-warm: #FFF8F0;             /* Warm background */
+        }
+        
+        body {
+            background: linear-gradient(135deg, var(--bg-warm) 0%, var(--accent-cream) 100%);
+            color: var(--text-dark);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+        
+        .hero-section {
+            background: linear-gradient(135deg, var(--primary-warm) 0%, var(--primary-dark) 100%);
+            color: white;
+            min-height: 50vh;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .hero-section::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grain" width="100" height="100" patternUnits="userSpaceOnUse"><circle cx="25" cy="25" r="1" fill="white" opacity="0.1"/><circle cx="75" cy="75" r="1" fill="white" opacity="0.1"/><circle cx="50" cy="10" r="0.5" fill="white" opacity="0.1"/><circle cx="90" cy="40" r="0.5" fill="white" opacity="0.1"/><circle cx="10" cy="60" r="0.5" fill="white" opacity="0.1"/></pattern></defs><rect width="100" height="100" fill="url(%23grain)"/></svg>');
+            opacity: 0.3;
+        }
+        
+        .view-card {
+            background: white;
+            border: 2px solid var(--primary-light);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .view-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(212, 175, 55, 0.1), transparent);
+            transition: left 0.5s ease;
+        }
+        
+        .view-card:hover::before {
+            left: 100%;
+        }
+        
+        .view-card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 20px 40px rgba(139, 69, 19, 0.2);
+            border-color: var(--accent-gold);
+        }
+        
+        .view-icon {
+            background: linear-gradient(135deg, var(--primary-light) 0%, var(--accent-gold) 100%);
+            color: var(--primary-dark);
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            margin: 0 auto 1.5rem;
+            transition: all 0.3s ease;
+        }
+        
+        .view-card:hover .view-icon {
+            transform: scale(1.1);
+            background: linear-gradient(135deg, var(--accent-gold) 0%, var(--primary-light) 100%);
+        }
+        
+        .stats-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(139, 69, 19, 0.3);
+            box-shadow: 0 4px 12px rgba(139, 69, 19, 0.15);
+            transition: all 0.3s ease;
+        }
+        
+        .stats-card:hover {
+            background: rgba(255, 255, 255, 1);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(139, 69, 19, 0.2);
+        }
+        
+        .stats-card .text-sm {
+            opacity: 0.8 !important;
+            font-weight: 500;
+        }
+        
+        .language-toggle {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 2rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .language-toggle:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: scale(1.05);
+        }
+        
+        .api-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+        
+        .status-online {
+            background: linear-gradient(45deg, #10b981, #059669);
+            animation: pulse 2s infinite;
+        }
+        
+        .status-offline {
+            background: linear-gradient(45deg, #ef4444, #dc2626);
+        }
+        
+        .restaurant-pattern {
+            background-image: 
+                radial-gradient(circle at 25% 25%, var(--primary-light) 2px, transparent 2px),
+                radial-gradient(circle at 75% 75%, var(--accent-gold) 1px, transparent 1px);
+            background-size: 50px 50px;
+            opacity: 0.1;
+        }
+    </style>
+</head>
+<body>
+    <!-- API Status Badge -->
+    <div class="api-status">
+        <div id="statusBadge" class="px-4 py-2 rounded-full text-white font-bold status-offline">
+            <i class="fas fa-circle mr-2"></i>
+            <span id="statusText" data-i18n="status.connecting">连接中...</span>
+        </div>
+    </div>
+
+    <!-- Hero Section -->
+    <section class="hero-section relative">
+        <div class="restaurant-pattern absolute inset-0"></div>
+        <div class="relative z-10">
+            <div class="container mx-auto px-6 py-12">
+                <!-- Header -->
+                <div class="flex items-center justify-between mb-12">
+                    <div class="flex items-center">
+                        <i class="fas fa-print text-4xl mr-4"></i>
+                        <div>
+                            <h1 class="text-4xl font-bold" data-i18n="hero.title">智能打印机管理系统</h1>
+                            <p class="text-xl opacity-90" data-i18n="hero.subtitle">实时监控餐厅订单和打印机状态</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Language Toggle -->
+                    <div class="language-toggle" onclick="toggleLanguage()">
+                        <i class="fas fa-globe mr-2"></i>
+                        <span id="currentLang">中文</span>
+                    </div>
+                </div>
+
+                <!-- Stats Overview -->
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                    <div class="stats-card rounded-lg p-6 text-center">
+                        <div class="text-3xl font-bold text-blue-700" id="totalReceipts">--</div>
+                        <div class="text-sm opacity-75 text-blue-700" data-i18n="stats.totalReceipts">总订单数</div>
+                    </div>
+                    <div class="stats-card rounded-lg p-6 text-center">
+                        <div class="text-3xl font-bold text-green-700" id="activeTables">--</div>
+                        <div class="text-sm opacity-75 text-green-700" data-i18n="stats.activeTables">活跃桌台</div>
+                    </div>
+                    <div class="stats-card rounded-lg p-6 text-center">
+                        <div class="text-3xl font-bold text-purple-700" id="activePrinters">--</div>
+                        <div class="text-sm opacity-75 text-purple-700" data-i18n="stats.activePrinters">在线打印机</div>
+                    </div>
+                    <div class="stats-card rounded-lg p-6 text-center">
+                        <div class="text-3xl font-bold text-red-600" id="systemUptime">--</div>
+                        <div class="text-sm opacity-75 text-red-600" data-i18n="stats.uptime">系统运行时间</div>
+                    </div>
+                </div>
+
+                <!-- CTA -->
+                <div class="text-center">
+                    <h2 class="text-2xl font-bold mb-3" data-i18n="hero.cta">选择您的视图</h2>
+                    <p class="text-lg opacity-90" data-i18n="hero.description">三种不同的界面，满足不同的管理需求</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- View Selection -->
+    <section class="py-12">
+        <div class="container mx-auto px-6">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                
+                <!-- List View -->
+                <div class="view-card rounded-lg p-8 text-center cursor-pointer" onclick="navigateToView('list')">
+                    <div class="view-icon">
+                        <i class="fas fa-list"></i>
+                    </div>
+                    <h3 class="text-2xl font-bold mb-4" data-i18n="views.list.title">订单列表</h3>
+                    <p class="text-gray-600 mb-6" data-i18n="views.list.description">传统的订单时间线视图，实时显示所有收据和订单详情</p>
+                    
+                    <div class="mb-6">
+                        <div class="flex items-center justify-center space-x-4 text-sm text-gray-500">
+                            <span><i class="fas fa-search mr-1"></i><span data-i18n="features.search">搜索功能</span></span>
+                            <span><i class="fas fa-download mr-1"></i><span data-i18n="features.export">导出数据</span></span>
+                        </div>
+                    </div>
+                    
+                    <button class="w-full bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition-colors">
+                        <span data-i18n="buttons.enter">进入视图</span>
+                        <i class="fas fa-arrow-right ml-2"></i>
+                    </button>
+                </div>
+
+                <!-- Tables View -->
+                <div class="view-card rounded-lg p-8 text-center cursor-pointer" onclick="navigateToView('tables')">
+                    <div class="view-icon">
+                        <i class="fas fa-utensils"></i>
+                    </div>
+                    <h3 class="text-2xl font-bold mb-4" data-i18n="views.tables.title">餐桌管理</h3>
+                    <p class="text-gray-600 mb-6" data-i18n="views.tables.description">按餐桌组织订单，直观显示桌台状态和用餐进度</p>
+                    
+                    <div class="mb-6">
+                        <div class="flex items-center justify-center space-x-4 text-sm text-gray-500">
+                            <span><i class="fas fa-table mr-1"></i><span data-i18n="features.tableStatus">桌台状态</span></span>
+                            <span><i class="fas fa-clock mr-1"></i><span data-i18n="features.timeline">时间线</span></span>
+                        </div>
+                    </div>
+                    
+                    <button class="w-full bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg transition-colors">
+                        <span data-i18n="buttons.enter">进入视图</span>
+                        <i class="fas fa-arrow-right ml-2"></i>
+                    </button>
+                </div>
+
+                <!-- Printers View -->
+                <div class="view-card rounded-lg p-8 text-center cursor-pointer" onclick="navigateToView('printers')">
+                    <div class="view-icon">
+                        <i class="fas fa-print"></i>
+                    </div>
+                    <h3 class="text-2xl font-bold mb-4" data-i18n="views.printers.title">打印机监控</h3>
+                    <p class="text-gray-600 mb-6" data-i18n="views.printers.description">监控不同打印机的队列状态，优化厨房和服务效率</p>
+                    
+                    <div class="mb-6">
+                        <div class="flex items-center justify-center space-x-4 text-sm text-gray-500">
+                            <span><i class="fas fa-tasks mr-1"></i><span data-i18n="features.queues">队列管理</span></span>
+                            <span><i class="fas fa-chart-bar mr-1"></i><span data-i18n="features.metrics">性能指标</span></span>
+                        </div>
+                    </div>
+                    
+                    <button class="w-full bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-lg transition-colors">
+                        <span data-i18n="buttons.enter">进入视图</span>
+                        <i class="fas fa-arrow-right ml-2"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="bg-white py-16">
+        <div class="container mx-auto px-6">
+            <div class="text-center mb-12">
+                <h2 class="text-3xl font-bold mb-4" data-i18n="features.title">强大功能</h2>
+                <p class="text-lg text-gray-600" data-i18n="features.subtitle">为现代餐厅设计的智能管理工具</p>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+                <div class="text-center">
+                    <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i class="fas fa-stream text-blue-600 text-xl"></i>
+                    </div>
+                    <h3 class="text-lg font-bold mb-2" data-i18n="features.realtime.title">实时更新</h3>
+                    <p class="text-gray-600 text-sm" data-i18n="features.realtime.description">通过SSE技术实现毫秒级的实时数据更新</p>
+                </div>
+                
+                <div class="text-center">
+                    <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i class="fas fa-language text-green-600 text-xl"></i>
+                    </div>
+                    <h3 class="text-lg font-bold mb-2" data-i18n="features.multilingual.title">中英双语</h3>
+                    <p class="text-gray-600 text-sm" data-i18n="features.multilingual.description">完美支持中文和英文界面切换</p>
+                </div>
+                
+                <div class="text-center">
+                    <div class="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i class="fas fa-mobile-alt text-purple-600 text-xl"></i>
+                    </div>
+                    <h3 class="text-lg font-bold mb-2" data-i18n="features.responsive.title">响应式设计</h3>
+                    <p class="text-gray-600 text-sm" data-i18n="features.responsive.description">适配手机、平板和桌面设备</p>
+                </div>
+                
+                <div class="text-center">
+                    <div class="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i class="fas fa-brain text-orange-600 text-xl"></i>
+                    </div>
+                    <h3 class="text-lg font-bold mb-2" data-i18n="features.intelligent.title">智能分析</h3>
+                    <p class="text-gray-600 text-sm" data-i18n="features.intelligent.description">自动识别桌台信息和菜品分类</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="bg-gray-800 text-white py-8">
+        <div class="container mx-auto px-6 text-center">
+            <div class="flex items-center justify-center mb-4">
+                <i class="fas fa-print text-2xl mr-3"></i>
+                <span class="text-xl font-bold" data-i18n="footer.title">智能打印机管理系统</span>
+            </div>
+            <p class="text-gray-400" data-i18n="footer.description">连接到 printer.smartice.ai API 服务</p>
+            <div class="mt-4 text-sm text-gray-500">
+                <span data-i18n="footer.lastUpdate">最后更新</span>: <span id="lastUpdateTime">--</span>
+            </div>
+        </div>
+    </footer>
+
+    <!-- JavaScript -->
+    <script src="dashboard.js"></script>
+</body>
+</html>

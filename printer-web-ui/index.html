@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="title">打印机API控制台</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            /* Restaurant-inspired color scheme */
+            --primary-warm: #8B4513;        /* Warm brown */
+            --primary-light: #D2B48C;       /* Tan/beige */
+            --primary-dark: #5D2A0A;        /* Dark brown */
+            --accent-blue: #4A5568;         /* Muted blue-gray */
+            --accent-cream: #FAF5F0;        /* Warm cream */
+            --accent-gold: #D4AF37;         /* Gold accent */
+            --text-dark: #2D3748;           /* Dark text */
+            --text-light: #718096;          /* Light gray text */
+            --bg-warm: #FFF8F0;             /* Warm background */
+        }
+        
+        body {
+            background: linear-gradient(135deg, var(--bg-warm) 0%, var(--accent-cream) 100%);
+            color: var(--text-dark);
+        }
+        .receipt-paper {
+            background: linear-gradient(to bottom, #ffffff 0%, #f8f8f8 100%);
+            border: 1px solid #ddd;
+            font-family: 'Courier New', monospace;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .status-online {
+            animation: pulse 2s infinite;
+        }
+        
+        .status-offline {
+            opacity: 0.5;
+        }
+        
+        .receipt-stream {
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        
+        .receipt-item {
+            transition: all 0.3s ease;
+        }
+        
+        .receipt-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+        }
+        
+        .new-receipt {
+            animation: slideIn 0.5s ease-out;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-100%);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+        
+        .api-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+        
+        .receipt-count {
+            background: linear-gradient(45deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <!-- API Status Badge -->
+    <div class="api-status">
+        <div id="statusBadge" class="px-4 py-2 rounded-full text-white font-bold status-offline">
+            <i class="fas fa-circle mr-2"></i>
+            <span id="statusText">Connecting...</span>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <header class="bg-white shadow-lg">
+        <div class="container mx-auto px-6 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center">
+                    <i class="fas fa-print text-3xl text-blue-600 mr-3"></i>
+                    <h1 class="text-3xl font-bold text-gray-800" data-i18n="header.title">打印机API控制台</h1>
+                    <div class="language-toggle" onclick="toggleLanguage()" style="position: absolute; top: 0; right: 0; background: var(--primary-light); color: var(--primary-dark); padding: 0.5rem 1rem; border-radius: 1rem; cursor: pointer; margin-top: -0.5rem;">
+                        <i class="fas fa-globe mr-2"></i>
+                        <span id="currentLang">中文</span>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div class="receipt-count px-4 py-2 rounded-lg">
+                        <i class="fas fa-receipt mr-2"></i>
+                        <span id="receiptCount">0</span> <span data-i18n="stats.receipts">张收据</span>
+                    </div>
+                    <button id="refreshBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors">
+                        <i class="fas fa-sync-alt mr-2"></i>
+                        <span data-i18n="buttons.refresh">刷新</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="container mx-auto px-6 py-8">
+        <!-- Stats Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <div class="flex items-center">
+                    <div class="p-3 rounded-full bg-green-100">
+                        <i class="fas fa-heartbeat text-green-600 text-xl"></i>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm text-gray-600" data-i18n="stats.status">状态</p>
+                        <p id="healthStatus" class="text-xl font-bold text-gray-800" data-i18n="status.checking">检查中...</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <div class="flex items-center">
+                    <div class="p-3 rounded-full bg-blue-100">
+                        <i class="fas fa-clock text-blue-600 text-xl"></i>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm text-gray-600" data-i18n="stats.uptime">运行时间</p>
+                        <p id="uptime" class="text-xl font-bold text-gray-800">--</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <div class="flex items-center">
+                    <div class="p-3 rounded-full bg-purple-100">
+                        <i class="fas fa-download text-purple-600 text-xl"></i>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm text-gray-600" data-i18n="stats.totalReceived">总接收数</p>
+                        <p id="totalReceived" class="text-xl font-bold text-gray-800">--</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <div class="flex items-center">
+                    <div class="p-3 rounded-full bg-red-100">
+                        <i class="fas fa-exclamation-triangle text-red-600 text-xl"></i>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm text-gray-600" data-i18n="stats.parseErrors">解析错误</p>
+                        <p id="parseErrors" class="text-xl font-bold text-gray-800">--</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <div class="flex flex-wrap items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <button id="streamToggle" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors">
+                        <i class="fas fa-play mr-2"></i>
+                        <span data-i18n="buttons.startStream">开始流</span>
+                    </button>
+                    <button id="clearBtn" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors">
+                        <i class="fas fa-trash mr-2"></i>
+                        <span data-i18n="buttons.clearDisplay">清空显示</span>
+                    </button>
+                </div>
+                
+                <div class="flex items-center space-x-4">
+                    <div class="flex items-center">
+                        <label for="searchInput" class="text-sm text-gray-600 mr-2" data-i18n="controls.search">搜索:</label>
+                        <input id="searchInput" type="text" placeholder="Receipt number..." 
+                               class="border border-gray-300 rounded-lg px-3 py-2 w-40 focus:outline-none focus:border-blue-500">
+                    </div>
+                    <button id="searchBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors">
+                        <i class="fas fa-search mr-2"></i>
+                        <span data-i18n="buttons.search">搜索</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Receipt Display -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Recent Receipts List -->
+            <div class="lg:col-span-2">
+                <div class="bg-white rounded-lg shadow-md">
+                    <div class="p-6 border-b border-gray-200">
+                        <h2 class="text-xl font-bold text-gray-800 flex items-center">
+                            <i class="fas fa-list mr-2 text-blue-600"></i>
+                            <span data-i18n="receipts.recent">最近收据</span>
+                            <span id="liveIndicator" class="ml-auto text-sm px-2 py-1 bg-gray-300 text-gray-600 rounded-full">
+                                <i class="fas fa-circle mr-1"></i>
+                                <span data-i18n="status.offline">离线</span>
+                            </span>
+                        </h2>
+                    </div>
+                    <div id="receiptsList" class="receipt-stream p-6">
+                        <div class="text-center text-gray-500 py-8">
+                            <i class="fas fa-receipt text-4xl mb-4"></i>
+                            <p data-i18n="receipts.noReceiptsYet">暂无收据。启动流以查看实时更新。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Receipt Detail View -->
+            <div class="lg:col-span-1">
+                <div class="bg-white rounded-lg shadow-md">
+                    <div class="p-6 border-b border-gray-200">
+                        <h2 class="text-xl font-bold text-gray-800 flex items-center">
+                            <i class="fas fa-eye mr-2 text-green-600"></i>
+                            <span data-i18n="receipts.detail">收据详情</span>
+                        </h2>
+                    </div>
+                    <div id="receiptDetail" class="p-6">
+                        <div class="text-center text-gray-500 py-8">
+                            <i class="fas fa-mouse-pointer text-4xl mb-4"></i>
+                            <p data-i18n="receipts.clickToView">点击收据查看详情</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- JavaScript -->
+    <script src="app.js"></script>
+</body>
+</html>

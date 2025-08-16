@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="title">餐厅餐桌控制台</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .table-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 200px;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .table-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+        
+        .table-card.occupied {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        
+        .table-card.pending {
+            background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+            color: #333;
+        }
+        
+        .table-card.ready {
+            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+            color: #333;
+        }
+        
+        .order-item {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: all 0.3s ease;
+        }
+        
+        .order-item:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateX(5px);
+        }
+        
+        .dish-tag {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            font-size: 0.75rem;
+            padding: 2px 8px;
+            border-radius: 12px;
+            margin: 2px;
+            display: inline-block;
+        }
+        
+        .table-number {
+            font-size: 2.5rem;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .status-badge {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        
+        .floating-controls {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+        
+        .api-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+        
+        .new-order {
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        .order-timeline {
+            position: relative;
+        }
+        
+        .order-timeline::before {
+            content: '';
+            position: absolute;
+            left: 15px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: rgba(255, 255, 255, 0.3);
+        }
+        
+        .timeline-item {
+            position: relative;
+            padding-left: 40px;
+            margin-bottom: 16px;
+        }
+        
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            left: 8px;
+            top: 8px;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.8);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <!-- API Status Badge -->
+    <div class="api-status">
+        <div id="statusBadge" class="px-4 py-2 rounded-full text-white font-bold status-offline">
+            <i class="fas fa-circle mr-2"></i>
+            <span id="statusText" data-i18n="status.connecting">连接中...</span>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <header class="bg-white shadow-lg">
+        <div class="container mx-auto px-6 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center">
+                    <i class="fas fa-utensils text-3xl text-orange-600 mr-3"></i>
+                    <h1 class="text-3xl font-bold text-gray-800" data-i18n="header.title">餐厅餐桌控制台</h1>
+                    <div class="language-toggle" onclick="toggleLanguage()" style="position: absolute; top: 0; right: 0; background: var(--primary-light); color: var(--primary-dark); padding: 0.5rem 1rem; border-radius: 1rem; cursor: pointer; margin-top: -0.5rem;">
+                        <i class="fas fa-globe mr-2"></i>
+                        <span id="currentLang">中文</span>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div class="px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg">
+                        <i class="fas fa-table mr-2"></i>
+                        <span id="activeTablesCount">0</span> <span data-i18n="stats.activeTables">活跃餐桌</span>
+                    </div>
+                    <div class="px-4 py-2 bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-lg">
+                        <i class="fas fa-receipt mr-2"></i>
+                        <span id="totalOrdersCount">0</span> <span data-i18n="stats.orders">订单</span>
+                    </div>
+                    <a href="index.html" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg transition-colors">
+                        <i class="fas fa-list mr-2"></i>
+                        <span data-i18n="nav.listView">列表视图</span>
+                    </a>
+                    <a href="printers.html" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors">
+                        <i class="fas fa-print mr-2"></i>
+                        <span data-i18n="nav.printers">打印机</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Restaurant Layout Controls -->
+    <div class="container mx-auto px-6 py-4">
+        <div class="bg-white rounded-lg shadow-md p-4 mb-6">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <div class="flex items-center">
+                        <label class="text-sm text-gray-600 mr-2" data-i18n="controls.layout">布局:</label>
+                        <select id="layoutSelect" class="border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500">
+                            <option value="grid" data-i18n="layout.gridView">网格视图</option>
+                            <option value="floor" data-i18n="layout.floorPlan">楼层平面图</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center">
+                        <label class="text-sm text-gray-600 mr-2" data-i18n="controls.filter">筛选:</label>
+                        <select id="statusFilter" class="border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500">
+                            <option value="all" data-i18n="filter.allTables">所有餐桌</option>
+                            <option value="occupied" data-i18n="filter.occupied">已占用</option>
+                            <option value="pending" data-i18n="filter.pendingOrders">待处理订单</option>
+                            <option value="ready" data-i18n="filter.readyToServe">准备上菜</option>
+                            <option value="empty" data-i18n="filter.empty">空闲</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="flex items-center space-x-2">
+                    <button id="refreshBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors">
+                        <i class="fas fa-sync-alt mr-2"></i>
+                        <span data-i18n="buttons.refresh">刷新</span>
+                    </button>
+                    <button id="streamToggle" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors">
+                        <i class="fas fa-play mr-2"></i>
+                        <span data-i18n="buttons.startLiveUpdates">开始实时更新</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tables Grid -->
+    <main class="container mx-auto px-6 pb-8">
+        <div id="tablesGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <!-- Tables will be dynamically generated here -->
+        </div>
+        
+        <!-- Empty State -->
+        <div id="emptyState" class="text-center py-12 hidden">
+            <i class="fas fa-utensils text-6xl text-gray-400 mb-4"></i>
+            <h3 class="text-xl font-bold text-gray-600 mb-2" data-i18n="empty.noActiveTables">没有活跃的餐桌</h3>
+            <p class="text-gray-500" data-i18n="empty.startReceiving">开始接收订单以查看餐桌活动</p>
+        </div>
+    </main>
+
+    <!-- Order Detail Modal -->
+    <div id="orderModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden">
+        <div class="flex items-center justify-center min-h-screen p-4">
+            <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden">
+                <div class="p-6 border-b border-gray-200">
+                    <div class="flex items-center justify-between">
+                        <h2 class="text-2xl font-bold text-gray-800" id="modalTitle" data-i18n="modal.tableOrders">餐桌订单</h2>
+                        <button id="closeModal" class="text-gray-400 hover:text-gray-600">
+                            <i class="fas fa-times text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+                <div id="modalContent" class="p-6 overflow-y-auto max-h-96">
+                    <!-- Modal content will be loaded here -->
+                </div>
+                <div class="p-6 border-t border-gray-200 bg-gray-50">
+                    <div class="flex justify-end space-x-3">
+                        <button id="markReadyBtn" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors">
+                            <i class="fas fa-check mr-2"></i>
+                            <span data-i18n="buttons.markReady">标记为准备好</span>
+                        </button>
+                        <button id="clearTableBtn" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors">
+                            <i class="fas fa-broom mr-2"></i>
+                            <span data-i18n="buttons.clearTable">清空餐桌</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Floating Controls -->
+    <div class="floating-controls">
+        <div class="flex flex-col space-y-3">
+            <button id="liveIndicator" class="px-4 py-2 bg-gray-300 text-gray-600 rounded-full text-sm">
+                <i class="fas fa-circle mr-1"></i>
+                <span data-i18n="status.offline">离线</span>
+            </button>
+            <button id="fullscreenBtn" class="bg-purple-600 hover:bg-purple-700 text-white p-3 rounded-full shadow-lg transition-colors">
+                <i class="fas fa-expand-alt"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- JavaScript -->
+    <script src="tables.js"></script>
+</body>
+</html>
