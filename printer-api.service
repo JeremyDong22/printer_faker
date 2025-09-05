@@ -12,8 +12,8 @@ WorkingDirectory=/home/smartahc/smartice/printer_faker
 Environment="PATH=/home/smartahc/.local/bin:/usr/local/bin:/usr/bin:/bin"
 Environment="PYTHONUNBUFFERED=1"
 ExecStart=/home/smartahc/.local/bin/uv run python3 /home/smartahc/smartice/printer_faker/printer_api_service.py
-StandardOutput=append:/home/smartahc/smartice/printer_faker/logs/service.log
-StandardError=append:/home/smartahc/smartice/printer_faker/logs/service_error.log
+StandardOutput=journal
+StandardError=journal
 
 # Restart configuration
 StartLimitBurst=5

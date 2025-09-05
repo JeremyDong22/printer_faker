@@ -1,0 +1,10 @@
+[Unit]
+Description=Restart Printer API Service daily at 2 AM
+Requires=printer-api-restart.service
+
+[Timer]
+OnCalendar=*-*-* 02:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

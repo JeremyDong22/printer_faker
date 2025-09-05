@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Bluetooth virtual printer service that emulates a thermal printer to receive and capture print data from POS (Point of Sale) terminals. The service acts as a Bluetooth SPP (Serial Port Profile) server that POS machines can connect to as if it were a real printer.
+This is a **24/7 Restaurant Order Management System** that captures and processes receipt data from POS terminals for real-time integration with cloud services (Cloudflare Workers and Supabase). The system provides a reliable TCP listener on port 9100 and REST API on port 5000 for restaurant kitchen and order management.
+
+**Critical for Operations**: This service must maintain 99%+ uptime as it handles all restaurant orders and kitchen coordination.
 
 ## Project Architecture
 
@@ -12,31 +14,46 @@ This is a Bluetooth virtual printer service that emulates a thermal printer to r
 
 ```
 printer_faker/
-├── virtual_printer.py      # Main application entry point
-│   ├── ESCPOSParser        # ESC/POS command parser class
-│   ├── PrinterEmulator     # Bluetooth server and printer logic
-│   └── PrintJobManager     # Queue management for print jobs
-├── requirements.txt         # Python dependencies (pybluez2)
-├── run.sh                  # Main execution script using uv
-├── monitor.sh              # Verbose monitoring script
-├── watch_logs.sh           # Real-time log viewer
-└── test_setup.py           # Setup verification script
+├── printer_api_service.py  # Main TCP/API service (PORT CONFLICT with virtual_printer.py!)
+│   ├── ESCPOSParser        # ESC/POS command parser (imported from virtual_printer)
+│   ├── ReceiptExtractor    # Extract receipt number and timestamp
+│   ├── PrinterAPIService   # TCP server on port 9100
+│   └── Flask API           # REST API on port 5000
+├── virtual_printer.py      # DEPRECATED - DO NOT RUN (conflicts on port 9100)
+├── printer_api_service_v2.py # Enhanced version with SQLite persistence (ready to deploy)
+└── requirements.txt         # Python dependencies (Flask, pybluez2, pytest)
+```
+
+### Critical Services & Monitoring
+
+```
+System Services:
+├── printer-api.service      # Main systemd service (no daily restarts!)
+├── printer-monitor.service  # Health monitoring (auto-restart on issues)
+├── auto_cleanup.sh          # Hourly cron to prevent file accumulation
+└── logrotate.d/printer-api  # Log rotation (max 100MB, 7 days retention)
 ```
 
 ### Data Flow
 
-1. **Bluetooth Advertisement** → Virtual Printer broadcasts as SPP device
-2. **POS Connection** → POS terminal connects via RFCOMM
-3. **Data Reception** → Raw ESC/POS commands received
-4. **Command Parsing** → ESCPOSParser interprets commands
-5. **Data Storage** → Print jobs saved to timestamped files
-6. **ACK Response** → Emulator sends acknowledgment to POS
+1. **TCP Connection** → POS terminal connects to port 9100
+2. **Data Reception** → Raw ESC/POS commands received via TCP
+3. **Command Parsing** → ESCPOSParser interprets commands
+4. **Data Storage** → Receipts stored in memory (deque) and optionally SQLite
+5. **API Access** → REST API on port 5000 provides receipt data
+6. **Cloud Integration** → Cloudflare Workers fetch data for Supabase processing
 
 ### File Output Structure
 
 ```
-pos_print_YYYYMMDD_HHMMSS.txt  # Raw print data files
-logs/printer_YYYYMMDD_HHMMSS.log  # Verbose operation logs
+logs/
+├── monitor.log              # Health monitoring logs
+├── service_error.log        # Service errors (rotated daily, max 100MB)
+└── backup/                  # Backup of cleaned logs
+
+output/                      # Receipt data (auto-cleaned after 7 days)
+├── raw_*.bin               # Raw ESC/POS data
+└── parsed_*.txt            # Parsed receipt text
 ```
 
 ## Coding Principles
@@ -236,12 +253,21 @@ Monitor scripts automatically configure proxy settings.
 
 ## Key Functionality
 
-- Creates a Bluetooth RFCOMM socket server
-- Advertises itself as "Virtual Printer" using the SPP service UUID
-- Accepts connections from POS terminals
-- Receives print data and saves it to timestamped files (pos_print_YYYYMMDD_HHMMSS.txt)
-- Sends ACK responses to simulate printer behavior
-- Handles multiple sequential connections
+### Production Service (printer_api_service.py)
+- TCP server on port 9100 for POS connections
+- REST API on port 5000 with endpoints:
+  - `/api/health` - Service health check
+  - `/api/receipts` - Get recent receipts (requires auth)
+  - `/api/stats` - Service statistics
+- In-memory storage with 500-receipt buffer
+- Cloudflare tunnel integration for secure remote access
+- Authentication via `Authorization` header
+
+### Enhanced Version (printer_api_service_v2.py - Ready to Deploy)
+- SQLite persistence for receipt history
+- Connection pooling (max 50 connections)
+- Thread management with proper resource limits
+- Automatic database cleanup (30-day retention)
 
 ## Development Setup
 
@@ -279,25 +305,25 @@ uv run python3 virtual_printer.py
 ### Quick Start
 
 ```bash
-# Option 1: Use the run script (recommended)
-./run.sh
+# Production service is managed by systemd
+sudo systemctl status printer-api.service
+sudo systemctl restart printer-api.service
 
-# Option 2: Use monitor script for verbose output
-./monitor.sh
+# View logs
+journalctl -u printer-api.service -f
+tail -f logs/monitor.log
 
-# Option 3: Direct uv run
-uv run python3 virtual_printer.py
+# Manual testing
+curl -H "Authorization: smartbcg" http://localhost:5000/api/health
 ```
 
-The service will start and display:
-- Service name: Virtual Printer
-- Port number being used
-- Connection status updates
+**WARNING**: Never run virtual_printer.py in production - it conflicts with printer_api_service.py on port 9100!
 
-### Bluetooth Configuration
-- Service UUID: 00001101-0000-1000-8000-00805F9B34FB (standard SPP UUID)
-- Profile: SERIAL_PORT_PROFILE
-- Protocol: RFCOMM
+### Network Configuration
+- TCP Port 9100: POS printer protocol (ESC/POS over TCP)
+- HTTP Port 5000: REST API for monitoring and data access
+- Cloudflare Tunnel: Secure remote access to API
+- Authentication: Password in Authorization header
 
 ## Technical Architecture
 
@@ -335,13 +361,13 @@ while True:
 uv run python3 test_setup.py
 ```
 
-### Integration Testing
-1. Ensure Bluetooth is enabled: `systemctl status bluetooth`
-2. Run the service: `uv run python3 virtual_printer.py`
-3. From a POS terminal, scan for Bluetooth devices
-4. Connect to "Virtual Printer"
-5. Send print data
-6. Verify files created: `ls -la pos_print_*.txt`
+### Production Testing
+1. Check service status: `sudo systemctl status printer-api.service`
+2. Test health endpoint: `curl -H "Authorization: smartbcg" http://localhost:5000/api/health`
+3. Check monitoring: `tail -f logs/monitor.log`
+4. Send test data to port 9100: `echo "Test receipt" | nc localhost 9100`
+5. View receipts: `curl -H "Authorization: smartbcg" http://localhost:5000/api/receipts`
+6. Check Cloudflare tunnel: `pgrep -f cloudflared`
 
 ### Monitoring
 ```bash
@@ -360,6 +386,58 @@ The service captures raw ESC/POS commands which typically include:
 - Barcode/QR code data
 - Receipt formatting
 
+## Critical Operational Issues Resolved
+
+### Problems Fixed (September 2025)
+1. **File Descriptor Exhaustion** - 2,700+ accumulated files in /output directory
+   - Solution: Implemented hourly auto_cleanup.sh cron job
+   - Files older than 7 days are automatically deleted
+   
+2. **Daily Service Interruptions** - printer-api-restart.timer causing 2 AM downtime
+   - Solution: Disabled timer, implemented smart health monitoring instead
+   
+3. **Port Conflicts** - virtual_printer.py and printer_api_service.py both using port 9100
+   - Solution: Identified conflict, documented to never run virtual_printer.py in production
+   
+4. **Disk Space Exhaustion** - 5.4GB service_error.log from health check logging every 10 seconds
+   - Solution: Truncated log, implemented logrotate with 100MB limit and 7-day retention
+   - Changed systemd service to use journald instead of file logging
+   
+5. **Lack of Persistence** - In-memory storage lost on restart
+   - Solution: Created printer_api_service_v2.py with SQLite persistence (ready to deploy)
+
+### Monitoring and Maintenance
+
+```bash
+# Check service health
+sudo systemctl status printer-api.service
+sudo systemctl status printer-monitor.service
+
+# View recent logs
+journalctl -u printer-api.service -n 100
+tail -f logs/monitor.log
+
+# Check disk usage
+du -sh /home/smartahc/smartice/printer_faker/
+
+# Manual cleanup if needed
+find output/ -name "*.bin" -mtime +7 -delete
+find output/ -name "*.txt" -mtime +7 -delete
+
+# Test API endpoints
+curl -H "Authorization: smartbcg" http://localhost:5000/api/health
+curl -H "Authorization: smartbcg" http://localhost:5000/api/stats
+```
+
+### Service Recovery Procedures
+
+If service fails:
+1. Check monitor logs: `tail -100 logs/monitor.log`
+2. Check system journal: `journalctl -u printer-api.service -n 50`
+3. Verify no port conflicts: `sudo lsof -i:9100` and `sudo lsof -i:5000`
+4. Restart if needed: `sudo systemctl restart printer-api.service`
+5. Monitor will auto-restart on actual failures (not on schedule)
+
 ## Best Practices for Contributors
 
 1. **Always use uv** - Never run Python directly
@@ -369,3 +447,6 @@ The service captures raw ESC/POS commands which typically include:
 5. **Handle errors gracefully** - Fail fast with clear messages
 6. **One change at a time** - Small, focused commits
 7. **Monitor verbose output** - Use `./monitor.sh` during development
+8. **Never run virtual_printer.py in production** - Conflicts with main service
+9. **Check disk space regularly** - Monitor log and output directories
+10. **Use health monitoring** - Don't schedule restarts, let monitor handle issues

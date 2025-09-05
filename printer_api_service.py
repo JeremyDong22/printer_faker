@@ -17,9 +17,16 @@ from typing import Dict, Optional, Any
 import queue
 import time
 import os
+import struct
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 from flask import Flask, jsonify, request, Response
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from functools import wraps
 import hashlib
 
@@ -29,8 +36,16 @@ from virtual_printer import ESCPOSParser, PlainTextRenderer
 app = Flask(__name__)
 CORS(app)  # Allow cross-origin requests
 
-# Authentication
-API_PASSWORD = "smartbcg"
+# Rate limiting - generous limits for local monitoring
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["10000 per hour", "50000 per day"],  # Much higher for monitoring
+    storage_uri="memory://"
+)
+
+# Authentication - Use environment variable or strong default
+API_PASSWORD = os.environ.get('PRINTER_API_PASSWORD', 'DWiVVeSQtM8/S8uTlQzcg6rlJQg/H6SSHxYNnll56zo=')
 API_PASSWORD_HASH = hashlib.sha256(API_PASSWORD.encode()).hexdigest()
 
 def require_auth(f):
@@ -47,6 +62,8 @@ def require_auth(f):
         
         # Check if password matches
         if hashlib.sha256(auth.encode()).hexdigest() != API_PASSWORD_HASH:
+            # Log failed attempts
+            logger.warning(f"Failed auth attempt from {get_remote_address()}")
             return jsonify({'error': 'Invalid password'}), 403
             
         return f(*args, **kwargs)
@@ -110,6 +127,8 @@ class PrinterAPIService:
         self.receipt_extractor = ReceiptExtractor()
         self.escpos_parser = ESCPOSParser()
         self.plain_renderer = PlainTextRenderer()
+        
+        # No threading needed - handle connections sequentially like a real printer
         
         # Real-time streaming
         self.stream_queue = queue.Queue()
@@ -175,17 +194,40 @@ class PrinterAPIService:
             while self.running:
                 try:
                     client_sock, client_addr = server_sock.accept()
-                    # Handle connection in thread
-                    thread = threading.Thread(
-                        target=self.handle_printer_connection,
-                        args=(client_sock, client_addr)
-                    )
-                    thread.daemon = True
-                    thread.start()
+                    
+                    # Set aggressive timeout to prevent hanging
+                    client_sock.settimeout(5.0)  # 5 second timeout for all operations
+                    
+                    # Handle connection directly - no threads at all
+                    try:
+                        self.handle_printer_connection(client_sock, client_addr)
+                    except socket.timeout:
+                        self.logger.warning(f"Connection from {client_addr} timed out")
+                    except Exception as e:
+                        self.logger.error(f"Error handling connection from {client_addr}: {e}")
+                    finally:
+                        # Always close the connection after handling
+                        try:
+                            client_sock.shutdown(socket.SHUT_RDWR)
+                        except:
+                            pass
+                        try:
+                            client_sock.close()
+                        except:
+                            pass
+                        
                 except socket.timeout:
                     continue
+                except OSError as e:
+                    if e.errno == 24:  # Too many open files
+                        self.logger.error(f"File descriptor limit reached! Sleeping...")
+                        time.sleep(5)  # Wait 5 seconds before retrying
+                    else:
+                        self.logger.error(f"TCP Server error: {e}")
+                        time.sleep(1)  # Brief pause on other errors
                 except Exception as e:
                     self.logger.error(f"TCP Server error: {e}")
+                    time.sleep(1)
                     
         except Exception as e:
             self.logger.error(f"❌ Failed to start TCP server on port {port}: {e}")
@@ -196,6 +238,12 @@ class PrinterAPIService:
     def handle_printer_connection(self, client_sock, client_addr):
         """Handle incoming printer data - using exact logic from virtual_printer.py"""
         # Don't log every connection - too noisy with POS status checks
+        
+        # Set socket options to prevent file descriptor leaks
+        client_sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        # Don't use SO_LINGER - let the OS handle proper TCP closure
+        # client_sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, 
+        #                        struct.pack('ii', 1, 0))  # This can cause CLOSE-WAIT
         
         session_data = []
         last_data_time = time.time()
@@ -209,10 +257,9 @@ class PrinterAPIService:
                 try:
                     data = client_sock.recv(1024)
                     if not data:
-                        # Check if really disconnected
-                        if time.time() - last_data_time > idle_timeout:
-                            break
-                        continue
+                        # Empty data means connection closed by peer
+                        break  # Exit immediately, don't wait for timeout
+                        # Remove the sleep and timeout check here
                     
                     last_data_time = time.time()
                     session_data.append(data)
@@ -227,9 +274,10 @@ class PrinterAPIService:
                         client_sock.send(response)
                         
                 except socket.timeout:
-                    # Don't disconnect immediately on timeout
+                    # Check if we've been idle too long
                     if time.time() - last_data_time > idle_timeout:
                         break
+                    # No sleep needed - timeout already provides delay
                     continue
                 except ConnectionResetError:
                     # POS disconnected (normal)
@@ -241,6 +289,10 @@ class PrinterAPIService:
             if "Connection reset by peer" not in str(e):
                 self.logger.error(f"Connection error: {e}")
         finally:
+            try:
+                client_sock.shutdown(socket.SHUT_RDWR)
+            except:
+                pass  # Socket may already be closed
             client_sock.close()
             
             # Process accumulated data (like virtual_printer does)
@@ -459,153 +511,610 @@ def stream_receipts():
 
 @app.route('/')
 def index():
-    """Simple web interface for testing"""
+    """Enhanced web dashboard for monitoring"""
     html = """
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Printer API Service</title>
+        <title>Printer Monitor Dashboard</title>
         <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
             body { 
-                font-family: 'Courier New', monospace; 
-                max-width: 1200px; 
-                margin: 50px auto; 
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: #333;
                 padding: 20px;
-                background: #1a1a1a;
-                color: #0f0;
             }
-            h1 { color: #0f0; text-shadow: 0 0 10px #0f0; }
-            .status { 
-                background: #000; 
-                padding: 15px; 
-                border: 1px solid #0f0;
-                margin: 20px 0;
-                border-radius: 5px;
+            .container {
+                max-width: 1400px;
+                margin: 0 auto;
             }
-            .endpoint { 
-                background: #0a0a0a; 
-                padding: 10px; 
-                margin: 10px 0; 
-                border-left: 3px solid #0f0;
+            h1 { 
+                color: white;
+                font-size: 2.5rem;
+                margin-bottom: 30px;
+                text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
             }
-            code { 
-                background: #000; 
-                padding: 2px 5px; 
-                color: #0ff;
+            .dashboard {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+                gap: 20px;
+                margin-bottom: 30px;
             }
-            button {
-                background: #000;
-                color: #0f0;
-                border: 1px solid #0f0;
-                padding: 10px 20px;
-                cursor: pointer;
-                margin: 5px;
+            .card {
+                background: white;
+                border-radius: 10px;
+                padding: 20px;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
             }
-            button:hover {
-                background: #0f0;
-                color: #000;
+            .card h3 {
+                margin-bottom: 15px;
+                color: #667eea;
             }
-            #stream-output {
-                background: #000;
-                border: 1px solid #0f0;
-                padding: 10px;
-                height: 300px;
+            .stat-value {
+                font-size: 2rem;
+                font-weight: bold;
+                color: #333;
+            }
+            .stat-label {
+                color: #666;
+                font-size: 0.9rem;
+                margin-top: 5px;
+            }
+            .status-indicator {
+                display: inline-block;
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+                margin-right: 8px;
+                animation: pulse 2s infinite;
+            }
+            .status-online { background: #48bb78; }
+            .status-offline { background: #f56565; }
+            @keyframes pulse {
+                0% { opacity: 1; }
+                50% { opacity: 0.5; }
+                100% { opacity: 1; }
+            }
+            .receipt-list {
+                background: white;
+                border-radius: 10px;
+                padding: 20px;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                max-height: 80vh;  /* 80% of viewport height */
                 overflow-y: auto;
-                margin: 20px 0;
-                font-size: 12px;
+                scroll-behavior: smooth;
             }
             .receipt-item {
-                border-bottom: 1px solid #030;
-                padding: 5px 0;
+                padding: 15px;
+                border-bottom: 1px solid #e2e8f0;
+                transition: all 0.2s;
+                cursor: pointer;
+                position: relative;
+            }
+            .receipt-item:hover {
+                background: #f7fafc;
+                transform: translateX(5px);
+                box-shadow: -2px 0 0 0 #667eea;
+            }
+            .receipt-item::after {
+                content: '→';
+                position: absolute;
+                right: 15px;
+                top: 50%;
+                transform: translateY(-50%);
+                color: #cbd5e0;
+                font-size: 1.2rem;
+                opacity: 0;
+                transition: opacity 0.2s;
+            }
+            .receipt-item:hover::after {
+                opacity: 1;
+            }
+            .receipt-item.new {
+                animation: highlight 1s;
+            }
+            @keyframes highlight {
+                0% { background: #bee3f8; }
+                100% { background: transparent; }
+            }
+            .receipt-header {
+                display: flex;
+                justify-content: space-between;
+                margin-bottom: 8px;
+            }
+            .receipt-no {
+                font-weight: bold;
+                color: #667eea;
+            }
+            .receipt-time {
+                color: #718096;
+                font-size: 0.9rem;
+            }
+            .receipt-preview {
+                color: #4a5568;
+                font-size: 0.85rem;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .controls {
+                display: flex;
+                gap: 10px;
+                margin-bottom: 20px;
+            }
+            button {
+                background: white;
+                color: #667eea;
+                border: 2px solid #667eea;
+                padding: 10px 20px;
+                border-radius: 5px;
+                cursor: pointer;
+                font-weight: 600;
+                transition: all 0.3s;
+            }
+            button:hover {
+                background: #667eea;
+                color: white;
+            }
+            button.active {
+                background: #667eea;
+                color: white;
+            }
+            .search-box {
+                display: flex;
+                gap: 10px;
+                margin-bottom: 20px;
+            }
+            input {
+                flex: 1;
+                padding: 10px;
+                border: 2px solid #e2e8f0;
+                border-radius: 5px;
+                font-size: 16px;
+            }
+            input:focus {
+                outline: none;
+                border-color: #667eea;
+            }
+            .receipt-detail {
+                display: none;
+                background: white;
+                border-radius: 10px;
+                padding: 20px;
+                margin-top: 20px;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+                border: 2px solid #667eea;
+                animation: slideIn 0.3s ease-out;
+            }
+            .receipt-detail.show {
+                display: block;
+            }
+            @keyframes slideIn {
+                from {
+                    opacity: 0;
+                    transform: translateY(-20px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+            .receipt-content {
+                background: #f7fafc;
+                padding: 15px;
+                border-radius: 5px;
+                font-family: 'Courier New', monospace;
+                white-space: pre-wrap;
+                word-break: break-word;
+                max-height: 400px;
+                overflow-y: auto;
+                font-size: 0.9rem;
+            }
+            .close-detail {
+                float: right;
+                cursor: pointer;
+                font-size: 1.5rem;
+                color: #718096;
+            }
+            .close-detail:hover {
+                color: #2d3748;
+            }
+            .auth-modal {
+                display: none;
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0,0,0,0.5);
+                z-index: 1000;
+            }
+            .auth-modal.show {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+            }
+            .auth-form {
+                background: white;
+                padding: 30px;
+                border-radius: 10px;
+                box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+                width: 90%;
+                max-width: 400px;
+            }
+            .auth-form h2 {
+                margin-bottom: 20px;
+                color: #667eea;
+            }
+            .auth-form input {
+                width: 100%;
+                margin-bottom: 15px;
+            }
+            .auth-form button {
+                width: 100%;
+            }
+            .error-message {
+                color: #f56565;
+                margin-top: 10px;
+                display: none;
             }
         </style>
     </head>
     <body>
-        <h1>🖨️ Printer API Service</h1>
-        <div class="status" id="status">
-            Loading status...
+        <div class="container">
+            <h1>🖨️ Printer Monitor Dashboard</h1>
+            
+            <div class="dashboard">
+                <div class="card">
+                    <h3>Service Status</h3>
+                    <div>
+                        <span class="status-indicator status-online"></span>
+                        <span id="status-text">Online</span>
+                    </div>
+                    <div class="stat-label" id="uptime">Uptime: Loading...</div>
+                </div>
+                
+                <div class="card">
+                    <h3>Total Receipts</h3>
+                    <div class="stat-value" id="total-receipts">0</div>
+                    <div class="stat-label">Processed Today</div>
+                </div>
+                
+                <div class="card">
+                    <h3>Last Receipt</h3>
+                    <div id="last-receipt-time">-</div>
+                    <div class="stat-label">Receipt Time</div>
+                </div>
+                
+                <div class="card">
+                    <h3>Parse Errors</h3>
+                    <div class="stat-value" id="parse-errors">0</div>
+                    <div class="stat-label">Total Errors</div>
+                </div>
+            </div>
+            
+            <div class="controls">
+                <button onclick="toggleStream()" id="stream-btn">Start Live Stream</button>
+                <button onclick="loadRecent()">Load Recent</button>
+                <button onclick="clearDisplay()">Clear Display</button>
+                <button onclick="exportReceipts()">Export All</button>
+                <button onclick="logout()" style="background: #f56565; border-color: #f56565;">Logout</button>
+            </div>
+            
+            <div class="search-box">
+                <input type="text" id="search-input" placeholder="Search by receipt number..." onkeypress="if(event.key==='Enter') searchReceipt()">
+                <button onclick="searchReceipt()">Search</button>
+            </div>
+            
+            <div class="receipt-list" id="receipt-list">
+                <h3 style="margin-bottom: 15px;">Recent Receipts</h3>
+                <div id="receipts-container"></div>
+            </div>
+            
+            <div class="receipt-detail" id="receipt-detail">
+                <span class="close-detail" onclick="closeDetail()">&times;</span>
+                <h3>Receipt Details</h3>
+                <div id="detail-info"></div>
+                <div class="receipt-content" id="detail-content"></div>
+            </div>
         </div>
         
-        <h2>API Endpoints:</h2>
-        <div class="endpoint">
-            <strong>GET /api/health</strong> - Service health and statistics
+        <div class="auth-modal" id="auth-modal">
+            <div class="auth-form">
+                <h2>🔐 Authentication Required</h2>
+                <p style="margin-bottom: 20px; color: #718096;">Please enter the API password to access the dashboard</p>
+                <input type="password" id="auth-password" placeholder="Hint: smartbcg" onkeypress="if(event.key==='Enter') authenticate()">
+                <button onclick="authenticate()">Login</button>
+                <div class="error-message" id="auth-error">Invalid password. Please try again.</div>
+            </div>
         </div>
-        <div class="endpoint">
-            <strong>GET /api/recent</strong> - Last 10 receipts (for testing)
-        </div>
-        <div class="endpoint">
-            <strong>GET /api/receipts</strong> - All stored receipts (max 500)
-        </div>
-        <div class="endpoint">
-            <strong>GET /api/search?no=XXX</strong> - Search by receipt number
-        </div>
-        <div class="endpoint">
-            <strong>GET /api/stream</strong> - Real-time SSE stream
-        </div>
-        
-        <h3>Test Controls:</h3>
-        <button onclick="testHealth()">Test Health</button>
-        <button onclick="testRecent()">Get Recent</button>
-        <button onclick="toggleStream()" id="stream-btn">Start Stream</button>
-        
-        <h3>Real-time Stream Output:</h3>
-        <div id="stream-output"></div>
         
         <script>
             let eventSource = null;
+            let receipts = [];
+            let apiPassword = localStorage.getItem('apiPassword') || '';
+            let isAuthenticated = false;
             
-            async function testHealth() {
-                const res = await fetch('/api/health');
-                const data = await res.json();
-                document.getElementById('status').innerHTML = 
-                    '<h3>Service Status: <span style="color: #0f0;">● Online</span></h3>' +
-                    '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+            async function updateStatus() {
+                if (!isAuthenticated) return;
+                
+                try {
+                    const res = await fetch('/api/health', {
+                        headers: { 'Authorization': apiPassword }
+                    });
+                    if (!res.ok) {
+                        isAuthenticated = false;
+                        showAuthPrompt();
+                        return;
+                    }
+                    const data = await res.json();
+                    
+                    document.getElementById('total-receipts').textContent = data.total_received || 0;
+                    document.getElementById('parse-errors').textContent = data.parse_errors || 0;
+                    
+                    if (data.last_receipt) {
+                        const lastTime = new Date(data.last_receipt);
+                        document.getElementById('last-receipt-time').textContent = lastTime.toLocaleTimeString();
+                    }
+                    
+                    const uptime = data.uptime_seconds || 0;
+                    const hours = Math.floor(uptime / 3600);
+                    const minutes = Math.floor((uptime % 3600) / 60);
+                    document.getElementById('uptime').textContent = `Uptime: ${hours}h ${minutes}m`;
+                } catch (error) {
+                    console.error('Failed to update status:', error);
+                }
             }
             
-            async function testRecent() {
-                const res = await fetch('/api/recent');
-                const data = await res.json();
-                alert('Recent receipts (check console)');
-                console.log(data);
+            async function loadRecent() {
+                if (!isAuthenticated) return;
+                
+                try {
+                    const res = await fetch('/api/recent', {
+                        headers: { 'Authorization': apiPassword }
+                    });
+                    if (!res.ok) {
+                        isAuthenticated = false;
+                        showAuthPrompt();
+                        return;
+                    }
+                    const data = await res.json();
+                    receipts = data;
+                    displayReceipts(data);
+                } catch (error) {
+                    console.error('Failed to load recent:', error);
+                }
+            }
+            
+            function displayReceipts(receiptList) {
+                const container = document.getElementById('receipts-container');
+                container.innerHTML = '';
+                
+                receiptList.slice().reverse().forEach(receipt => {
+                    const item = createReceiptElement(receipt);
+                    container.appendChild(item);
+                });
+            }
+            
+            function createReceiptElement(receipt, isNew = false) {
+                const item = document.createElement('div');
+                item.className = 'receipt-item' + (isNew ? ' new' : '');
+                item.style.cursor = 'pointer';
+                item.onclick = () => showDetail(receipt);
+                
+                const preview = receipt.plain_text ? 
+                    receipt.plain_text.split('\\n')[0].substring(0, 100) : 
+                    '[Empty Receipt]';
+                
+                item.innerHTML = `
+                    <div class="receipt-header">
+                        <span class="receipt-no">Receipt #${receipt.receipt_no || 'N/A'}</span>
+                        <span class="receipt-time">${receipt.timestamp}</span>
+                    </div>
+                    <div class="receipt-preview">${preview}...</div>
+                `;
+                
+                return item;
+            }
+            
+            function showDetail(receipt) {
+                const detail = document.getElementById('receipt-detail');
+                const info = document.getElementById('detail-info');
+                const content = document.getElementById('detail-content');
+                
+                // Format the receipt info
+                info.innerHTML = `
+                    <div style="display: grid; grid-template-columns: auto 1fr; gap: 10px; margin-bottom: 15px;">
+                        <strong>Receipt Number:</strong> <span style="color: #667eea; font-size: 1.1em;">${receipt.receipt_no || 'N/A'}</span>
+                        <strong>Timestamp:</strong> <span>${receipt.timestamp}</span>
+                        <strong>Receipt ID:</strong> <span style="font-family: monospace; font-size: 0.9em;">${receipt.id}</span>
+                    </div>
+                `;
+                
+                // Display the full receipt content
+                content.textContent = receipt.plain_text || '[No content available]';
+                
+                // Show the detail panel with animation
+                detail.classList.add('show');
+                detail.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+            
+            function closeDetail() {
+                document.getElementById('receipt-detail').classList.remove('show');
             }
             
             function toggleStream() {
+                if (!isAuthenticated && !eventSource) return;
+                
                 const btn = document.getElementById('stream-btn');
-                const output = document.getElementById('stream-output');
                 
                 if (eventSource) {
                     eventSource.close();
                     eventSource = null;
-                    btn.textContent = 'Start Stream';
-                    output.innerHTML += '<div style="color: #f00;">Stream disconnected</div>';
+                    btn.textContent = 'Start Live Stream';
+                    btn.classList.remove('active');
                 } else {
-                    eventSource = new EventSource('/api/stream');
-                    btn.textContent = 'Stop Stream';
+                    eventSource = new EventSource('/api/stream?auth=' + encodeURIComponent(apiPassword));
+                    btn.textContent = 'Stop Live Stream';
+                    btn.classList.add('active');
                     
                     eventSource.onmessage = (event) => {
                         const data = JSON.parse(event.data);
-                        if (data.type === 'connected') {
-                            output.innerHTML += '<div style="color: #0ff;">Stream connected!</div>';
-                        } else {
-                            const item = document.createElement('div');
-                            item.className = 'receipt-item';
-                            item.innerHTML = 
-                                'Receipt No: ' + (data.receipt_no || 'N/A') + 
-                                ' | Time: ' + data.timestamp + 
-                                ' | ID: ' + data.id.substring(0, 8);
-                            output.appendChild(item);
-                            output.scrollTop = output.scrollHeight;
+                        if (data.type !== 'connected') {
+                            const container = document.getElementById('receipts-container');
+                            const item = createReceiptElement(data, true);
+                            container.insertBefore(item, container.firstChild);
+                            
+                            // Update stats
+                            updateStatus();
+                            
+                            // Keep only last 50 items in view
+                            while (container.children.length > 50) {
+                                container.removeChild(container.lastChild);
+                            }
                         }
                     };
                     
                     eventSource.onerror = () => {
-                        output.innerHTML += '<div style="color: #f00;">Stream error</div>';
+                        console.error('Stream error');
                     };
                 }
             }
             
-            // Load status on page load
-            testHealth();
+            function clearDisplay() {
+                document.getElementById('receipts-container').innerHTML = '';
+            }
+            
+            async function searchReceipt() {
+                if (!isAuthenticated) return;
+                
+                const searchTerm = document.getElementById('search-input').value;
+                if (!searchTerm) return;
+                
+                try {
+                    const res = await fetch(`/api/search?no=${encodeURIComponent(searchTerm)}`, {
+                        headers: { 'Authorization': apiPassword }
+                    });
+                    if (!res.ok) {
+                        isAuthenticated = false;
+                        showAuthPrompt();
+                        return;
+                    }
+                    const data = await res.json();
+                    
+                    if (data.length > 0) {
+                        displayReceipts(data);
+                    } else {
+                        alert('No receipts found with that number');
+                    }
+                } catch (error) {
+                    console.error('Search failed:', error);
+                }
+            }
+            
+            async function exportReceipts() {
+                if (!isAuthenticated) return;
+                
+                try {
+                    const res = await fetch('/api/receipts', {
+                        headers: { 'Authorization': apiPassword }
+                    });
+                    if (!res.ok) {
+                        isAuthenticated = false;
+                        showAuthPrompt();
+                        return;
+                    }
+                    const data = await res.json();
+                    
+                    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `receipts_${new Date().toISOString().split('T')[0]}.json`;
+                    a.click();
+                } catch (error) {
+                    console.error('Export failed:', error);
+                }
+            }
+            
+            function showAuthPrompt() {
+                document.getElementById('auth-modal').classList.add('show');
+                document.getElementById('auth-password').focus();
+            }
+            
+            async function authenticate() {
+                const password = document.getElementById('auth-password').value;
+                if (!password) return;
+                
+                // Test the password
+                try {
+                    const res = await fetch('/api/health', {
+                        headers: { 'Authorization': password }
+                    });
+                    
+                    if (res.ok) {
+                        // Password is correct
+                        apiPassword = password;
+                        isAuthenticated = true;
+                        localStorage.setItem('apiPassword', password);
+                        document.getElementById('auth-modal').classList.remove('show');
+                        document.getElementById('auth-error').style.display = 'none';
+                        
+                        // Start the dashboard
+                        updateStatus();
+                        loadRecent();
+                        setInterval(updateStatus, 10000);
+                    } else {
+                        // Wrong password
+                        document.getElementById('auth-error').style.display = 'block';
+                        document.getElementById('auth-password').value = '';
+                    }
+                } catch (error) {
+                    console.error('Auth error:', error);
+                    document.getElementById('auth-error').style.display = 'block';
+                }
+            }
+            
+            function logout() {
+                localStorage.removeItem('apiPassword');
+                apiPassword = '';
+                isAuthenticated = false;
+                location.reload();
+            }
+            
+            // Initialize - always verify the password works
+            async function initialize() {
+                if (apiPassword) {
+                    // Test if stored password still works
+                    try {
+                        const res = await fetch('/api/health', {
+                            headers: { 'Authorization': apiPassword }
+                        });
+                        if (res.ok) {
+                            // Password is valid, start the dashboard
+                            isAuthenticated = true;
+                            updateStatus();
+                            loadRecent();
+                            setInterval(updateStatus, 10000);
+                        } else {
+                            // Stored password is invalid
+                            localStorage.removeItem('apiPassword');
+                            apiPassword = '';
+                            showAuthPrompt();
+                        }
+                    } catch (error) {
+                        console.error('Auth check failed:', error);
+                        showAuthPrompt();
+                    }
+                } else {
+                    // No password stored
+                    showAuthPrompt();
+                }
+            }
+            
+            // Start initialization
+            initialize();
         </script>
     </body>
     </html>
@@ -640,8 +1149,8 @@ def main():
     print("="*60)
     print("\n✅ Service running! Press Ctrl+C to stop.\n")
     
-    # Start Flask API server
-    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
+    # Start Flask API server without threading (to prevent thread explosion with SSE)
+    app.run(host='0.0.0.0', port=5000, debug=False, threaded=False)
 
 
 if __name__ == '__main__':

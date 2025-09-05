@@ -1,0 +1,13 @@
+[Unit]
+Description=Auto-monitor printer service health
+After=printer-api.service
+
+[Service]
+Type=simple
+ExecStart=/home/smartahc/smartice/printer_faker/monitor_health.sh watch
+Restart=always
+RestartSec=10
+User=smartahc
+
+[Install]
+WantedBy=multi-user.target

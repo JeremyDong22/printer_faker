@@ -1,0 +1,18 @@
+[Unit]
+Description=Printer API Health Monitor
+After=printer-api.service
+Requires=printer-api.service
+
+[Service]
+Type=simple
+User=smartahc
+WorkingDirectory=/home/smartahc/smartice/printer_faker
+Environment="PATH=/home/smartahc/.local/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/home/smartahc/smartice/printer_faker/monitor_health_service.sh
+Restart=always
+RestartSec=60
+StandardOutput=append:/home/smartahc/smartice/printer_faker/logs/monitor.log
+StandardError=append:/home/smartahc/smartice/printer_faker/logs/monitor_error.log
+
+[Install]
+WantedBy=multi-user.target
