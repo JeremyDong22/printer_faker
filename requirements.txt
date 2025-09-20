@@ -1,17 +1,28 @@
-# Bluetooth support for Python
-# Using pybluez2 which is a maintained fork
-pybluez2>=0.46
+# Production dependencies for Printer Faker Service
+
+# Web framework
+Flask>=3.1.0
+flask-cors>=6.0.0
+flask-limiter>=3.12
+
+# WSGI server
+gunicorn>=23.0.0
+
+# Supabase integration
+supabase>=2.18.0
+httpx>=0.28.0
+
+# Monitoring and logging
+axiom-py>=1.0.0
+
+# Python environment
+python-dotenv>=1.0.0
 
 # Testing dependencies (TDD is mandatory)
 pytest>=7.4.0
 pytest-cov>=4.1.0
 pytest-mock>=3.11.0
+pytest-asyncio>=0.21.0
 
-# Alternative: If pybluez2 doesn't work, try:
-# bleak>=0.21.0  # For BLE support
-# pyserial>=3.5  # For serial port communication
-
-# Additional dependencies for the virtual printer
-# Note: System-level bluetooth libraries are also required:
-# Linux: sudo apt-get install bluetooth libbluetooth-dev python3-dev
-# macOS: brew install bluez
+# Development dependencies (optional)
+# pybluez2>=0.46  # For virtual_printer.py testing only

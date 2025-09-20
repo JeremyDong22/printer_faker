@@ -8,14 +8,14 @@ MAX_AGE_DAYS=7  # Keep files for 7 days max
 
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Starting cleanup" >> "$LOG_FILE"
 
-# Count files before cleanup
-BEFORE_COUNT=$(find "$OUTPUT_DIR" -type f \( -name "raw_*.bin" -o -name "receipt_plain_*.txt" \) 2>/dev/null | wc -l)
+# Count files before cleanup - match all receipt/raw files
+BEFORE_COUNT=$(find "$OUTPUT_DIR" -type f \( -name "raw_*.bin" -o -name "receipt_*.txt" -o -name "parsed_*.txt" \) 2>/dev/null | wc -l)
 
-# Delete files older than MAX_AGE_DAYS
-find "$OUTPUT_DIR" -type f \( -name "raw_*.bin" -o -name "receipt_plain_*.txt" \) -mtime +$MAX_AGE_DAYS -delete 2>/dev/null
+# Delete files older than MAX_AGE_DAYS - match all receipt/raw files
+find "$OUTPUT_DIR" -type f \( -name "raw_*.bin" -o -name "receipt_*.txt" -o -name "parsed_*.txt" \) -mtime +$MAX_AGE_DAYS -delete 2>/dev/null
 
 # Count files after cleanup
-AFTER_COUNT=$(find "$OUTPUT_DIR" -type f \( -name "raw_*.bin" -o -name "receipt_plain_*.txt" \) 2>/dev/null | wc -l)
+AFTER_COUNT=$(find "$OUTPUT_DIR" -type f \( -name "raw_*.bin" -o -name "receipt_*.txt" -o -name "parsed_*.txt" \) 2>/dev/null | wc -l)
 
 DELETED=$((BEFORE_COUNT - AFTER_COUNT))
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Deleted $DELETED files (Before: $BEFORE_COUNT, After: $AFTER_COUNT)" >> "$LOG_FILE"
@@ -24,8 +24,8 @@ echo "$(date '+%Y-%m-%d %H:%M:%S') - Deleted $DELETED files (Before: $BEFORE_COU
 if [ "$AFTER_COUNT" -gt 1000 ]; then
     echo "$(date '+%Y-%m-%d %H:%M:%S') - WARNING: Too many files ($AFTER_COUNT), performing emergency cleanup" >> "$LOG_FILE"
     # Delete files older than 1 day
-    find "$OUTPUT_DIR" -type f \( -name "raw_*.bin" -o -name "receipt_plain_*.txt" \) -mtime +1 -delete 2>/dev/null
-    NEW_COUNT=$(find "$OUTPUT_DIR" -type f \( -name "raw_*.bin" -o -name "receipt_plain_*.txt" \) 2>/dev/null | wc -l)
+    find "$OUTPUT_DIR" -type f \( -name "raw_*.bin" -o -name "receipt_*.txt" -o -name "parsed_*.txt" \) -mtime +1 -delete 2>/dev/null
+    NEW_COUNT=$(find "$OUTPUT_DIR" -type f \( -name "raw_*.bin" -o -name "receipt_*.txt" -o -name "parsed_*.txt" \) 2>/dev/null | wc -l)
     echo "$(date '+%Y-%m-%d %H:%M:%S') - Emergency cleanup complete. Remaining: $NEW_COUNT files" >> "$LOG_FILE"
 fi
 

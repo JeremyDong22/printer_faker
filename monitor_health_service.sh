@@ -28,8 +28,8 @@ check_health() {
     local needs_restart=0
     local restart_reasons=""
     
-    # Get PID
-    PID=$(pgrep -f "printer_api_service.py" | tail -1)
+    # Get PID - Look for gunicorn master process
+    PID=$(pgrep -f "gunicorn.*wsgi:application" | head -1)
     
     if [ -z "$PID" ]; then
         log_message "ERROR: Service not running! Starting it..."
@@ -61,22 +61,23 @@ check_health() {
     fi
     
     # Count TCP connections
-    CONNECTIONS=$(ss -tn | grep -c ":9100" || echo "0")
+    CONNECTIONS=$(ss -tn | grep ":9100" | wc -l || echo "0")
     if [ "$CONNECTIONS" -gt "$MAX_CONNECTIONS" ]; then
         needs_restart=1
         restart_reasons="${restart_reasons}Too many connections ($CONNECTIONS>$MAX_CONNECTIONS); "
     fi
-    
+
     # Count CLOSE_WAIT connections
-    CLOSE_WAIT=$(ss -tn | grep -c "CLOSE-WAIT.*:9100" || echo "0")
+    CLOSE_WAIT=$(ss -tn | grep "CLOSE-WAIT.*:9100" | wc -l || echo "0")
     if [ "$CLOSE_WAIT" -gt "$MAX_CLOSE_WAIT" ]; then
         needs_restart=1
         restart_reasons="${restart_reasons}Too many CLOSE_WAIT ($CLOSE_WAIT>$MAX_CLOSE_WAIT); "
     fi
-    
+
     # Check error rate
+    ERROR_COUNT=0
     if [ -f "$ERROR_LOG" ]; then
-        ERROR_COUNT=$(tail -500 "$ERROR_LOG" 2>/dev/null | grep -c "Too many open files\|Connection pool exhausted" || echo "0")
+        ERROR_COUNT=$(tail -500 "$ERROR_LOG" 2>/dev/null | grep "Too many open files\|Connection pool exhausted" | wc -l || echo "0")
         if [ "$ERROR_COUNT" -gt "$MAX_ERROR_RATE" ]; then
             needs_restart=1
             restart_reasons="${restart_reasons}High error rate ($ERROR_COUNT>$MAX_ERROR_RATE); "
@@ -104,7 +105,7 @@ check_health() {
         sleep 10  # Wait for service to stabilize
         
         # Verify restart successful
-        NEW_PID=$(pgrep -f "printer_api_service.py" | tail -1)
+        NEW_PID=$(pgrep -f "gunicorn.*wsgi:application" | head -1)
         if [ -n "$NEW_PID" ]; then
             log_message "Service restarted successfully (new PID: $NEW_PID)"
         else

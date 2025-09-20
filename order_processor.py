@@ -19,6 +19,14 @@ import time
 
 logger = logging.getLogger(__name__)
 
+# Import Axiom monitoring if available
+try:
+    from axiom_handler import AxiomLogger
+    AXIOM_ENABLED = os.getenv('AXIOM_ENABLED', 'true').lower() == 'true'
+except ImportError:
+    AxiomLogger = None
+    AXIOM_ENABLED = False
+
 @dataclass
 class Dish:
     """Represents a dish from receipt"""
@@ -59,13 +67,13 @@ class OrderProcessor:
     }
     
     def __init__(self, supabase_url: str = None, supabase_key: str = None, 
-                 axiom_token: str = None, axiom_dataset: str = 'kitchen-orders'):
+                 axiom_token: str = None, axiom_dataset: str = 'printer-faker-prod'):
         """Initialize with Supabase and Axiom credentials"""
         # Get from env if not provided
         self.supabase_url = supabase_url or os.environ.get('SUPABASE_URL')
         self.supabase_key = supabase_key or os.environ.get('SUPABASE_SERVICE_ROLE_KEY')
         self.axiom_token = axiom_token or os.environ.get('AXIOM_TOKEN')
-        self.axiom_dataset = axiom_dataset
+        self.axiom_dataset = axiom_dataset or os.environ.get('AXIOM_DATASET', 'printer-faker-prod')
         
         # Initialize Supabase client
         if self.supabase_url and self.supabase_key:
@@ -74,6 +82,20 @@ class OrderProcessor:
         else:
             self.supabase = None
             logger.warning("Supabase credentials not configured")
+        
+        # Initialize Axiom logger
+        self.axiom_logger = None
+        if AXIOM_ENABLED and AxiomLogger and self.axiom_token:
+            try:
+                from axiom_handler import setup_axiom_logging
+                self.axiom_logger = setup_axiom_logging(
+                    logger,
+                    dataset=self.axiom_dataset,
+                    token=self.axiom_token
+                )
+                logger.info("✅ Axiom monitoring enabled for OrderProcessor")
+            except Exception as e:
+                logger.warning(f"Failed to setup Axiom monitoring: {e}")
         
         # Retry queue for failed operations
         self.retry_queue = queue.Queue()
@@ -392,6 +414,23 @@ class OrderProcessor:
     
     def log_to_axiom_sync(self, event_data: Dict):
         """Send monitoring event to Axiom (synchronous version)"""
+        # Use AxiomLogger if available (preferred)
+        if self.axiom_logger:
+            try:
+                event_type = event_data.pop('event', 'order_event')
+                message = event_data.pop('message', f"Order event: {event_type}")
+                
+                # Log structured event with AxiomLogger
+                self.axiom_logger.log_event(
+                    event_type=event_type,
+                    message=message,
+                    **event_data
+                )
+                return
+            except Exception as e:
+                logger.warning(f"AxiomLogger failed, falling back to HTTP: {e}")
+        
+        # Fallback to direct HTTP if AxiomLogger not available
         if not self.axiom_token:
             return
         
@@ -614,6 +653,18 @@ class OrderProcessor:
             try:
                 result = self.supabase.table('order_dishes').insert(dish_data).execute()
                 logger.info(f"Inserted {len(dishes)} kitchen dishes to Supabase")
+            except Exception as e:
+                if 'duplicate key' in str(e) or '23505' in str(e):
+                    logger.warning(f"Duplicate kitchen slip detected for receipt {receipt_data.get('receipt_no')} - skipping (already processed)")
+                    return {
+                        'status': 'duplicate',
+                        'message': 'Kitchen slip already processed',
+                        'receipt_no': receipt_data.get('receipt_no'),
+                        'station': station_name
+                    }
+                else:
+                    logger.error(f"Failed to insert kitchen dishes: {e}")
+                    raise
                 
                 self.log_to_axiom_sync({
                     'event': 'kitchen_slip.processed',
@@ -661,6 +712,18 @@ class OrderProcessor:
             order_result = self.supabase.table('order_orders').insert(order_data).execute()
             order_id = order_result.data[0]['id']
             logger.info(f"Created order {order_id} in Supabase")
+        except Exception as e:
+            if 'duplicate key' in str(e) or '23505' in str(e):
+                logger.warning(f"Duplicate customer order detected for receipt {receipt_data.get('receipt_no')} - skipping (already processed)")
+                return {
+                    'status': 'duplicate',
+                    'message': 'Customer order already processed',
+                    'receipt_no': receipt_data.get('receipt_no'),
+                    'table_no': table_no
+                }
+            else:
+                logger.error(f"Failed to insert customer order: {e}")
+                raise
             
             # Parse and insert dishes
             dishes = self.parse_customer_dishes(text)
@@ -681,8 +744,15 @@ class OrderProcessor:
                         'urgency_level': 'normal'
                     })
                 
-                self.supabase.table('order_dishes').insert(dish_data).execute()
-                logger.info(f"Inserted {len(dishes)} customer dishes to Supabase")
+                try:
+                    self.supabase.table('order_dishes').insert(dish_data).execute()
+                    logger.info(f"Inserted {len(dishes)} customer dishes to Supabase")
+                except Exception as e:
+                    if 'duplicate key' in str(e) or '23505' in str(e):
+                        logger.warning(f"Some customer dishes already exist for order {order_id} - skipping duplicates")
+                    else:
+                        logger.error(f"Failed to insert customer dishes: {e}")
+                        raise
             
             self.log_to_axiom_sync({
                 'event': 'order.processed',

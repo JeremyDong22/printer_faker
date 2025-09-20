@@ -9,7 +9,7 @@ def get_dashboard_html():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Printer Monitor Dashboard</title>
+        <title>打印机监控面板</title>
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
             body { 
@@ -263,67 +263,67 @@ def get_dashboard_html():
     </head>
     <body>
         <div class="container">
-            <h1>🖨️ Printer Monitor Dashboard</h1>
+            <h1>🖨️ 打印机监控面板</h1>
             
             <div class="dashboard">
                 <div class="card">
-                    <h3>Service Status</h3>
+                    <h3>服务状态</h3>
                     <div>
                         <span class="status-indicator status-online"></span>
-                        <span id="status-text">Online</span>
-                        <span class="live-indicator" style="margin-left: 10px;">LIVE</span>
+                        <span id="status-text">在线</span>
+                        <span class="live-indicator" style="margin-left: 10px;">实时</span>
                     </div>
-                    <div class="stat-label" id="uptime">Uptime: Loading...</div>
+                    <div class="stat-label" id="uptime">运行时间: 加载中...</div>
                 </div>
                 
                 <div class="card">
-                    <h3>Total Receipts</h3>
-                    <div class="stat-value" id="total-receipts">0</div>
-                    <div class="stat-label">Processed Today</div>
+                    <h3>总小票数</h3>
+                    <div class="stat-value" id="today-receipts">0</div>
+                    <div class="stat-label">今日小票 (10AM起)</div>
                 </div>
                 
                 <div class="card">
-                    <h3>Last Receipt</h3>
+                    <h3>最后接收</h3>
                     <div id="last-receipt-time">-</div>
-                    <div class="stat-label">Receipt Time</div>
+                    <div class="stat-label">接收时间</div>
                 </div>
                 
                 <div class="card">
-                    <h3>Active Connections</h3>
-                    <div class="stat-value" id="active-connections">0</div>
-                    <div class="stat-label" id="connection-status">of 50 max</div>
+                    <h3>今日订单</h3>
+                    <div class="stat-value" id="today-orders">0</div>
+                    <div class="stat-label">今日客户订单 (10AM起)</div>
                 </div>
             </div>
             
             <div class="controls">
-                <button onclick="loadRecent()">Refresh</button>
-                <button onclick="exportReceipts()">Export All</button>
+                <button onclick="loadRecent()">刷新</button>
+                <button onclick="exportReceipts()">导出全部</button>
             </div>
             
             <div class="receipt-list" id="receipt-list">
-                <h3 style="margin-bottom: 15px;">Recent Receipts</h3>
+                <h3 style="margin-bottom: 15px;">最近小票</h3>
                 <div id="receipts-container"></div>
             </div>
         </div>
         
         <div class="auth-modal" id="auth-modal">
             <div class="auth-form">
-                <h2>🔐 Authentication Required</h2>
-                <p style="margin-bottom: 20px; color: #718096;">Please enter the API password</p>
-                <input type="password" id="auth-password" placeholder="Enter password" onkeypress="if(event.key==='Enter') authenticate()">
-                <button onclick="authenticate()">Login</button>
-                <div class="error-message" id="auth-error">Invalid password. Please try again.</div>
+                <h2>🔐 需要身份验证</h2>
+                <p style="margin-bottom: 20px; color: #718096;">请输入 API 密码</p>
+                <input type="password" id="auth-password" placeholder="输入密码" onkeypress="if(event.key==='Enter') authenticate()">
+                <button onclick="authenticate()">登录</button>
+                <div class="error-message" id="auth-error">密码错误，请重试。</div>
             </div>
         </div>
         
         <div class="order-modal" id="order-modal">
             <div class="order-details">
                 <h2>
-                    <span>📋 Order Details</span>
+                    <span>📋 订单详情</span>
                     <button class="close-btn" onclick="closeOrderModal()">&times;</button>
                 </h2>
                 <div class="order-info" id="order-info"></div>
-                <h3 style="margin-bottom: 10px; color: #4a5568;">Receipt Content</h3>
+                <h3 style="margin-bottom: 10px; color: #4a5568;">小票内容</h3>
                 <div class="order-content" id="order-content"></div>
             </div>
         </div>
@@ -346,9 +346,8 @@ def get_dashboard_html():
                     }
                     const data = await res.json();
                     
-                    document.getElementById('total-receipts').textContent = data.total_receipts || 0;
-                    document.getElementById('active-connections').textContent = data.connection_pool?.active || 0;
-                    document.getElementById('connection-status').textContent = `of ${data.connection_pool?.max || 50} max`;
+                    document.getElementById('today-receipts').textContent = data.today_receipts || 0;
+                    document.getElementById('today-orders').textContent = data.today_orders || 0;
                     
                     // Get health for uptime
                     const healthRes = await fetch('/api/health', {
@@ -359,7 +358,7 @@ def get_dashboard_html():
                         const uptime = health.uptime_seconds || 0;
                         const hours = Math.floor(uptime / 3600);
                         const minutes = Math.floor((uptime % 3600) / 60);
-                        document.getElementById('uptime').textContent = `Uptime: ${hours}h ${minutes}m`;
+                        document.getElementById('uptime').textContent = `运行时间: ${hours}小时 ${minutes}分钟`;
                         
                         if (health.last_receipt) {
                             const lastTime = new Date(health.last_receipt);
@@ -409,12 +408,12 @@ def get_dashboard_html():
                     
                     const preview = receipt.plain_text ? 
                         receipt.plain_text.split('\\n').filter(line => line.trim()).slice(0, 2).join(' | ').substring(0, 150) : 
-                        '[Empty Receipt]';
+                        '[空小票]';
                     
                     item.innerHTML = `
                         <div class="receipt-header">
-                            <span class="receipt-no">Receipt #${receipt.receipt_no || 'N/A'}</span>
-                            <span class="receipt-time">${new Date(receipt.timestamp).toLocaleString()}</span>
+                            <span class="receipt-no">小票 #${receipt.receipt_no || '无'}</span>
+                            <span class="receipt-time">${new Date(receipt.timestamp).toLocaleString('zh-CN')}</span>
                         </div>
                         <div class="receipt-preview">${preview}...</div>
                     `;
@@ -433,51 +432,51 @@ def get_dashboard_html():
                 
                 // Parse receipt content for structured display
                 const lines = receipt.plain_text ? receipt.plain_text.split('\\n') : [];
-                let tableNo = 'N/A';
-                let orderType = 'Receipt';
+                let tableNo = '无';
+                let orderType = '小票';
                 
                 // Extract table number and order type
                 lines.forEach(line => {
                     if (line.includes('桌号:') || line.includes('台号:')) {
-                        tableNo = line.split(':')[1]?.trim() || 'N/A';
+                        tableNo = line.split(':')[1]?.trim() || '无';
                     }
                     if (line.includes('制作分单')) {
-                        orderType = 'Kitchen Slip';
+                        orderType = '厨房分单';
                     } else if (line.includes('客单')) {
-                        orderType = 'Customer Order';
+                        orderType = '客户订单';
                     }
                 });
                 
                 // Display order info
                 infoDiv.innerHTML = `
                     <div class="order-info-row">
-                        <span class="order-info-label">Receipt Number:</span>
-                        <span>${receipt.receipt_no || 'N/A'}</span>
+                        <span class="order-info-label">小票编号:</span>
+                        <span>${receipt.receipt_no || '无'}</span>
                     </div>
                     <div class="order-info-row">
-                        <span class="order-info-label">Order Type:</span>
+                        <span class="order-info-label">订单类型:</span>
                         <span>${orderType}</span>
                     </div>
                     <div class="order-info-row">
-                        <span class="order-info-label">Table:</span>
+                        <span class="order-info-label">桌号:</span>
                         <span>${tableNo}</span>
                     </div>
                     <div class="order-info-row">
-                        <span class="order-info-label">Time:</span>
-                        <span>${new Date(receipt.timestamp).toLocaleString()}</span>
+                        <span class="order-info-label">时间:</span>
+                        <span>${new Date(receipt.timestamp).toLocaleString('zh-CN')}</span>
                     </div>
                     ${receipt.supabase_status ? `
                     <div class="order-info-row">
-                        <span class="order-info-label">Supabase Status:</span>
+                        <span class="order-info-label">Supabase 状态:</span>
                         <span style="color: ${receipt.supabase_status === 'processed' ? '#48bb78' : '#f56565'}">
-                            ${receipt.supabase_status.toUpperCase()}
+                            ${receipt.supabase_status === 'processed' ? '已处理' : '未处理'}
                         </span>
                     </div>
                     ` : ''}
                 `;
                 
                 // Display receipt content
-                contentDiv.textContent = receipt.plain_text || 'No content available';
+                contentDiv.textContent = receipt.plain_text || '无内容';
                 
                 // Show modal
                 modal.classList.add('show');

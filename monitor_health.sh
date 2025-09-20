@@ -13,8 +13,8 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 check_health() {
-    # Get PID
-    PID=$(pgrep -f "printer_api_service.py" | tail -1)
+    # Get PID - Look for gunicorn master process
+    PID=$(pgrep -f "gunicorn.*wsgi:application" | head -1)
     
     if [ -z "$PID" ]; then
         echo -e "${RED}❌ Service not running!${NC}"

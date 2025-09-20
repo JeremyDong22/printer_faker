@@ -46,6 +46,16 @@ except ImportError:
     SUPABASE_ENABLED = False
     print("⚠️ OrderProcessor not available, Supabase integration disabled")
 
+# Import Axiom monitoring
+try:
+    from axiom_handler import setup_axiom_logging, AxiomLogger
+    AXIOM_ENABLED = os.getenv('AXIOM_ENABLED', 'true').lower() == 'true'
+    AXIOM_DATASET = os.getenv('AXIOM_DATASET', 'printer-faker-prod')
+except ImportError:
+    AXIOM_ENABLED = False
+    AxiomLogger = None
+    print("⚠️ Axiom monitoring not available")
+
 app = Flask(__name__)
 CORS(app)
 
@@ -368,7 +378,7 @@ class PrinterAPIService:
         self.running = True
         
     def setup_logging(self):
-        """Setup rotating file logging"""
+        """Setup rotating file logging with optional Axiom integration"""
         self.logger = logging.getLogger('printer_api')
         self.logger.setLevel(logging.INFO)
         
@@ -397,6 +407,20 @@ class PrinterAPIService:
             logging.Formatter('%(asctime)s - %(levelname)s - %(message)s - %(exc_info)s')
         )
         self.logger.addHandler(error_handler)
+        
+        # Setup Axiom logging if enabled
+        self.axiom_logger = None
+        if AXIOM_ENABLED and AxiomLogger:
+            try:
+                self.axiom_logger = setup_axiom_logging(
+                    self.logger,
+                    dataset=AXIOM_DATASET,
+                    level=logging.INFO
+                )
+                self.logger.info("✅ Axiom monitoring enabled")
+            except Exception as e:
+                self.logger.warning(f"Failed to setup Axiom monitoring: {e}")
+                self.axiom_logger = None
     
     def load_stats(self):
         """Load statistics from database"""
@@ -508,6 +532,16 @@ class PrinterAPIService:
     def handle_printer_connection(self, client_sock, client_addr):
         """Handle incoming printer data with proper resource management"""
         session_data = []
+        connection_start = time.time()
+        
+        # Log connection event to Axiom
+        if self.axiom_logger:
+            self.axiom_logger.log_event(
+                'client_connected',
+                f"New connection from {client_addr[0]}",
+                client_ip=client_addr[0],
+                port=client_addr[1]
+            )
         
         try:
             client_sock.settimeout(1.0)
@@ -538,7 +572,28 @@ class PrinterAPIService:
         except Exception as e:
             if "Connection reset" not in str(e):
                 self.logger.error(f"Connection error: {e}")
+                
+                # Log connection error to Axiom
+                if self.axiom_logger:
+                    self.axiom_logger.log_error(
+                        'connection_error',
+                        f"Connection error with client",
+                        exception=e,
+                        client_ip=client_addr[0]
+                    )
         finally:
+            connection_duration_ms = (time.time() - connection_start) * 1000
+            
+            # Log disconnection event
+            if self.axiom_logger:
+                self.axiom_logger.log_event(
+                    'client_disconnected',
+                    f"Connection closed from {client_addr[0]}",
+                    client_ip=client_addr[0],
+                    duration_ms=connection_duration_ms,
+                    data_received=len(b''.join(session_data)) if session_data else 0
+                )
+            
             try:
                 client_sock.shutdown(socket.SHUT_RDWR)
             except:
@@ -556,6 +611,8 @@ class PrinterAPIService:
         if len(complete_data) < 50:
             return  # Too small, probably just status query
         
+        start_time = time.time()
+        
         try:
             # Parse ESC/POS
             commands = self.escpos_parser.parse(complete_data)
@@ -572,6 +629,15 @@ class PrinterAPIService:
                 'plain_text': plain_text
             }
             
+            # Determine receipt type
+            receipt_type = 'unknown'
+            if '客单' in plain_text:
+                receipt_type = 'customer_order'
+            elif '制作分单' in plain_text:
+                receipt_type = 'kitchen_slip'
+            elif '退' in plain_text:
+                receipt_type = 'return_slip'
+            
             # Save to database
             self.db_manager.save_receipt(receipt, complete_data, source_ip)
             
@@ -582,24 +648,71 @@ class PrinterAPIService:
             self.stats['total_received'] += 1
             self.stats['last_receipt_time'] = datetime.datetime.now().isoformat()
             
+            # Calculate processing time
+            parse_time_ms = (time.time() - start_time) * 1000
+            
+            # Log structured event to Axiom
+            if self.axiom_logger:
+                self.axiom_logger.log_receipt(
+                    receipt_no=receipt['receipt_no'] or 'N/A',
+                    order_type=receipt_type,
+                    message=f"Receipt processed successfully",
+                    client_ip=source_ip,
+                    data_size=len(complete_data),
+                    parse_time_ms=parse_time_ms
+                )
+            
             # Broadcast
             self.broadcast_receipt(receipt)
             
             # Process to Supabase if enabled
             if self.order_processor:
                 try:
+                    supabase_start = time.time()
                     result = self.order_processor.process_receipt(receipt)
+                    supabase_time_ms = (time.time() - supabase_start) * 1000
+                    
                     self.stats['supabase_processed'] += 1
                     self.logger.info(f"✅ Supabase processed: {result}")
+                    
+                    # Log Supabase processing performance
+                    if self.axiom_logger:
+                        self.axiom_logger.log_performance(
+                            operation='supabase_process',
+                            duration_ms=supabase_time_ms,
+                            success=True,
+                            receipt_no=receipt['receipt_no'],
+                            result_type=result.get('type') if isinstance(result, dict) else 'processed'
+                        )
+                        
                 except Exception as e:
                     self.stats['supabase_errors'] += 1
                     self.logger.error(f"Supabase processing error: {e}")
+                    
+                    # Log Supabase error to Axiom
+                    if self.axiom_logger:
+                        self.axiom_logger.log_error(
+                            error_type='supabase_processing',
+                            message=f"Failed to process receipt in Supabase",
+                            exception=e,
+                            receipt_no=receipt['receipt_no']
+                        )
             
             self.logger.info(f"✅ Receipt saved: {receipt['receipt_no'] or 'N/A'}")
             
         except Exception as e:
             self.logger.error(f"Parse error: {e}")
             self.stats['parse_errors'] += 1
+            
+            # Log parse error to Axiom
+            if self.axiom_logger:
+                self.axiom_logger.log_error(
+                    error_type='parse_error',
+                    message=f"Failed to parse receipt data",
+                    exception=e,
+                    client_ip=source_ip,
+                    data_size=len(complete_data)
+                )
     
     def get_response(self, data):
         """Generate proper ESC/POS response emulating a real thermal printer"""
@@ -705,17 +818,37 @@ def get_stats():
     with service.db_manager.get_connection() as conn:
         cursor = conn.cursor()
         
-        # Total receipts
-        cursor.execute('SELECT COUNT(*) as total FROM receipts')
-        total = cursor.fetchone()['total']
-        
-        # Today's receipts
+        # Today's receipts (from 10AM Beijing time to midnight)
+        # Beijing time is UTC+8, so 10AM Beijing = 02:00 UTC
         cursor.execute('''
             SELECT COUNT(*) as today 
             FROM receipts 
-            WHERE date(created_at) = date('now')
+            WHERE datetime(created_at) >= datetime('now', 'start of day', '+2 hours')
+            AND datetime(created_at) < datetime('now', 'start of day', '+1 day', '+2 hours')
         ''')
-        today = cursor.fetchone()['today']
+        today_receipts = cursor.fetchone()['today']
+        
+        # Today's customer orders (客户订单) from 10AM Beijing time
+        cursor.execute('''
+            SELECT COUNT(*) as today_orders 
+            FROM receipts 
+            WHERE datetime(created_at) >= datetime('now', 'start of day', '+2 hours')
+            AND datetime(created_at) < datetime('now', 'start of day', '+1 day', '+2 hours')
+            AND plain_text LIKE '%客单%'
+        ''')
+        today_orders = cursor.fetchone()['today_orders']
+        
+        # Total all-time receipts (for reference)
+        cursor.execute('SELECT COUNT(*) as total FROM receipts')
+        total_all_time = cursor.fetchone()['total']
+        
+        # Total all-time customer orders (for reference)
+        cursor.execute('''
+            SELECT COUNT(*) as total_orders 
+            FROM receipts 
+            WHERE plain_text LIKE '%客单%'
+        ''')
+        total_orders_all_time = cursor.fetchone()['total_orders']
         
         # Unsynced receipts
         cursor.execute('SELECT COUNT(*) as unsynced FROM receipts WHERE synced_to_cloudflare = 0')
@@ -724,8 +857,10 @@ def get_stats():
     pool_status = service.connection_pool.get_status()
     
     return jsonify({
-        'total_receipts': total,
-        'today_receipts': today,
+        'total_receipts': total_all_time,
+        'total_orders': total_orders_all_time,
+        'today_receipts': today_receipts,
+        'today_orders': today_orders,
         'unsynced_receipts': unsynced,
         'parse_errors': service.stats['parse_errors'],
         'supabase_processed': service.stats.get('supabase_processed', 0),
@@ -734,6 +869,50 @@ def get_stats():
         'connection_pool': pool_status,
         'memory_cache_size': len(service.receipts)
     })
+
+# Axiom monitoring endpoints
+@app.route('/api/axiom/health', methods=['GET'])
+@require_auth
+def axiom_health():
+    """Check Axiom connectivity and status"""
+    status = {
+        'enabled': AXIOM_ENABLED,
+        'dataset': AXIOM_DATASET if AXIOM_ENABLED else None,
+        'connected': False,
+        'error': None
+    }
+    
+    if AXIOM_ENABLED and service.axiom_logger:
+        try:
+            # Test Axiom connectivity by sending a test event
+            service.axiom_logger.log_event(
+                'health_check',
+                'Axiom health check',
+                source='api_endpoint'
+            )
+            status['connected'] = True
+        except Exception as e:
+            status['error'] = str(e)
+    
+    return jsonify(status), 200 if status['connected'] else 503
+
+@app.route('/api/axiom/flush', methods=['POST'])
+@require_auth
+def axiom_flush():
+    """Force flush buffered logs to Axiom"""
+    if not AXIOM_ENABLED or not service.axiom_logger:
+        return jsonify({'error': 'Axiom not enabled'}), 400
+    
+    try:
+        # Flush buffered events
+        if hasattr(service.logger, 'handlers'):
+            for handler in service.logger.handlers:
+                if hasattr(handler, 'flush'):
+                    handler.flush()
+        
+        return jsonify({'status': 'flushed', 'timestamp': datetime.datetime.now().isoformat()})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # SSE endpoint removed - using polling or webhooks instead
 # The SSE endpoint was causing thread exhaustion and performance issues

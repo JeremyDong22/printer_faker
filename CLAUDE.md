@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a **24/7 Restaurant Order Management System** that captures and processes receipt data from POS terminals for real-time integration with cloud services (Cloudflare Workers and Supabase). The system provides a reliable TCP listener on port 9100 and REST API on port 5000 for restaurant kitchen and order management.
+This is a **24/7 Restaurant Order Management System** that captures and processes receipt data from POS terminals for direct integration with Supabase (no longer uses Cloudflare Workers). The system provides a reliable TCP listener on port 9100 and REST API on port 5000 for restaurant kitchen and order management with local order processing.
 
 **Critical for Operations**: This service must maintain 99%+ uptime as it handles all restaurant orders and kitchen coordination.
 
@@ -14,14 +14,22 @@ This is a **24/7 Restaurant Order Management System** that captures and processe
 
 ```
 printer_faker/
-├── printer_api_service.py  # Main TCP/API service (PORT CONFLICT with virtual_printer.py!)
-│   ├── ESCPOSParser        # ESC/POS command parser (imported from virtual_printer)
-│   ├── ReceiptExtractor    # Extract receipt number and timestamp
-│   ├── PrinterAPIService   # TCP server on port 9100
-│   └── Flask API           # REST API on port 5000
+├── printer_api_service.py  # DEPRECATED - Use V2 instead
+├── printer_api_service_v2.py # PRODUCTION VERSION - SQLite persistence + Supabase integration
+│   ├── ESCPOSParser        # ESC/POS command parser
+│   ├── ReceiptExtractor    # Extract receipt number and timestamp  
+│   ├── PrinterAPIService   # TCP server on port 9100 (singleton in master process)
+│   ├── Flask API           # REST API on port 5000 (no SSE endpoints)
+│   └── OrderProcessor      # Local Supabase integration (replaces Cloudflare Workers)
+├── order_processor.py      # Supabase order processing logic
+│   ├── Parse receipts      # Customer orders (客单) and kitchen slips (制作分单)
+│   ├── Station mapping     # Chinese names to UUIDs
+│   └── Direct DB writes    # Using Supabase Python SDK with RLS
 ├── virtual_printer.py      # DEPRECATED - DO NOT RUN (conflicts on port 9100)
-├── printer_api_service_v2.py # Enhanced version with SQLite persistence (ready to deploy)
-└── requirements.txt         # Python dependencies (Flask, pybluez2, pytest)
+├── dashboard.py            # Enhanced monitoring dashboard
+│   ├── Live updates        # 5-second polling (no SSE)
+│   └── Order details       # Click to view full receipt
+└── requirements.txt        # Python dependencies (Flask, supabase, httpx, gunicorn)
 ```
 
 ### Critical Services & Monitoring
@@ -39,9 +47,10 @@ System Services:
 1. **TCP Connection** → POS terminal connects to port 9100
 2. **Data Reception** → Raw ESC/POS commands received via TCP
 3. **Command Parsing** → ESCPOSParser interprets commands
-4. **Data Storage** → Receipts stored in memory (deque) and optionally SQLite
-5. **API Access** → REST API on port 5000 provides receipt data
-6. **Cloud Integration** → Cloudflare Workers fetch data for Supabase processing
+4. **Data Storage** → Receipts stored in SQLite with 30-day retention
+5. **Order Processing** → OrderProcessor analyzes receipts locally
+6. **Supabase Upload** → Direct database writes using Python SDK with RLS
+7. **API Access** → REST API on port 5000 provides receipt data (polling-based)
 
 ### File Output Structure
 
@@ -253,21 +262,23 @@ Monitor scripts automatically configure proxy settings.
 
 ## Key Functionality
 
-### Production Service (printer_api_service.py)
-- TCP server on port 9100 for POS connections
+### Production Service (printer_api_service_v2.py - IN PRODUCTION)
+- TCP server on port 9100 for POS connections (singleton in master process)
 - REST API on port 5000 with endpoints:
   - `/api/health` - Service health check
   - `/api/receipts` - Get recent receipts (requires auth)
+  - `/api/recent` - Get recent receipts with limit
   - `/api/stats` - Service statistics
-- In-memory storage with 500-receipt buffer
-- Cloudflare tunnel integration for secure remote access
+  - `/` - Dashboard with live updates
+- SQLite persistence for receipt history (30-day retention)
+- Direct Supabase integration:
+  - OrderProcessor analyzes receipts locally
+  - Customer orders (客单) create order records
+  - Kitchen slips (制作分单) update station assignments
+  - Multi-line dish name parsing support
+- Gunicorn WSGI server with gthread workers
+- Thread pool limited to ~14 threads total
 - Authentication via `Authorization` header
-
-### Enhanced Version (printer_api_service_v2.py - Ready to Deploy)
-- SQLite persistence for receipt history
-- Connection pooling (max 50 connections)
-- Thread management with proper resource limits
-- Automatic database cleanup (30-day retention)
 
 ## Development Setup
 
@@ -386,7 +397,84 @@ The service captures raw ESC/POS commands which typically include:
 - Barcode/QR code data
 - Receipt formatting
 
+## Station and Dish Mappings (Updated 2025-09-06)
+
+### ✅ VERIFIED: Only 5 Real Stations Exist in POS
+```python
+STATION_MAP = {
+    '荤菜': 'b2c3d4e5-f6a7-8901-bcde-f23456789012',  # Meat - 18 dishes
+    '素菜': 'c3d4e5f6-a7b8-9012-cdef-345678901234',  # Vegetable - 12 dishes
+    '酒水': 'd4e5f6a7-b8c9-0123-defa-456789012345',  # Beverages - 20 dishes
+    '小吃': 'a7b8c9d0-e1f2-3456-abcd-789012345678',  # Snacks - 13 dishes
+    '凉菜': '581b60be-428a-4673-9147-2c197478392b',  # Cold dishes - 3 dishes (UUID FIXED)
+    # WARNING: 主食, 汤品, 其他 DO NOT EXIST in POS - DO NOT ADD!
+}
+```
+
+### POS → SQLite Mapping: PERFECT ✅
+- **66 unique dishes** from 1,089 receipts analyzed
+- **Zero parsing errors** detected
+- **Zero duplicates** - each dish maps to exactly one station
+- **100% station extraction** success rate
+
+### Key Fixes Applied (2025-09-06)
+1. **凉菜 UUID Fixed**: Was duplicate of 小吃, now unique `581b60be-428a-4673-9147-2c197478392b`
+2. **Cold Dishes Corrected**: 贵州非遗丝娃娃, 野佐料擂椒皮蛋, 贵阳非遗脆三丁 moved to 凉菜
+3. **Test Data Removed**: All test dishes deleted from production
+4. **Malformed Entries Fixed**: Partial dishes like "胸口）" removed
+
 ## Critical Operational Issues Resolved
+
+### Problems Fixed (September 20, 2025)
+1. **Duplicate Key Crash Loop** - Service crashing on duplicate receipt processing
+   - Issue: POS terminal retries failed receipts every 5 seconds, causing duplicate key violations in Supabase
+   - Error: `duplicate key value violates unique constraint "idx_order_dishes_unique"` and `"unique_receipt_version"`
+   - Impact: Service crashed every time a duplicate receipt was processed, creating infinite crash-restart loop
+   - Root Cause: No error handling for database constraint violations - service crashed instead of gracefully handling duplicates
+   - Solution: Added comprehensive duplicate key handling in order_processor.py:
+     - Kitchen slip processing (lines 653-667): Catch duplicates, log warning, return success status
+     - Customer order processing (lines 710-726): Handle order duplicates gracefully
+     - Customer dish processing (lines 747-755): Skip duplicate dishes with warning
+   - Result: **CRASH LOOP ELIMINATED** - Service now stable with POS retries
+   - Files modified: order_processor.py (2025-09-20 17:28 - Added: duplicate key handling in order_processor.py with timestamp)
+
+2. **Log Size Explosion Prevention** - Confirmed log rotation working optimally
+   - Previous Issue: 5.4GB log files causing disk space exhaustion
+   - Current Status: Largest file only 3.8MB, proper compression and 7-day retention active
+   - Logrotate Configuration: `/etc/logrotate.d/printer-api` working correctly
+   - Daily rotation with 100MB limit and compression prevents future disk issues
+
+### Problems Fixed (September 9, 2025)
+1. **Combo Meal Parsing** - Kitchen slips with combo meals failing
+   - Issue: Long combo names like "美团团购-入野·双人放松Chill套餐" split across lines
+   - Error: Duplicate key violations when saving combo names as dishes
+   - Solution: Skip combo headers, only process actual dish sub-items (with '-' prefix)
+   - Impact: Kitchen stations now see only actual dishes, not marketing names
+   - Branch: fix/combo-meal-parsing pushed to GitHub
+
+2. **XCloudSDK CPU Hog** - Runaway process consuming 100% CPU
+   - Issue: XCloudSDKDemo_CLI stuck in infinite loop trying to connect to non-existent IP camera
+   - Impact: Consuming full CPU core for 10+ days (14,255 CPU hours!)
+   - Solution: Killed process, disabled binary, removed log file
+   - Prevention: Renamed binary to .disabled and removed execute permissions
+
+### Problems Fixed (September 7, 2025)
+1. **Timestamp Parsing Error** - Customer orders failing to save to Supabase
+   - Issue: Timestamps had Chinese prefix "打印时间: 2025-09-06 22:24:38"
+   - Error: `invalid input syntax for type timestamp with time zone`
+   - Solution: Added `parse_timestamp()` method in order_processor.py (lines 304-336)
+   - Impact: ALL customer orders now save correctly, enabling table view feature
+   - Files modified: order_processor.py line 500
+
+2. **Return Dish Handling** - No support for cancelled/returned dishes (退菜)
+   - Issue: Return slips were processed as regular orders or ignored
+   - Solution: Complete return dish workflow implementation:
+     - Extended Dish dataclass with `is_return` field (lines 22-28)
+     - Added `is_return_slip()` and `extract_return_reason()` detection methods (lines 175-182)
+     - Updated `parse_kitchen_slip_dishes()` to detect "(退)" prefix (lines 270-302)
+     - Created `process_return_slip()` method for complete workflow (lines 435-529)
+     - Modified main processing flow to check for return slips (lines 417-418)
+   - Impact: Kitchen won't prepare returned dishes, accurate billing with audit trail
 
 ### Problems Fixed (September 2025)
 1. **File Descriptor Exhaustion** - 2,700+ accumulated files in /output directory
@@ -404,7 +492,16 @@ The service captures raw ESC/POS commands which typically include:
    - Changed systemd service to use journald instead of file logging
    
 5. **Lack of Persistence** - In-memory storage lost on restart
-   - Solution: Created printer_api_service_v2.py with SQLite persistence (ready to deploy)
+   - Solution: Created printer_api_service_v2.py with SQLite persistence (now in production)
+
+6. **SSE Thread Explosion** - Each SSE connection created permanent threads
+   - Solution: Removed SSE endpoints completely, dashboard uses 5-second polling
+   
+7. **Cloudflare Workers Overhead** - Unnecessary complexity for single-location setup
+   - Solution: Eliminated Workers/DO, process orders locally with direct Supabase writes
+   
+8. **Multi-line Dish Names** - Long dish names split across lines in receipts
+   - Solution: Implemented parenthesis-aware multi-line parsing
 
 ### Monitoring and Maintenance
 
@@ -431,12 +528,20 @@ curl -H "Authorization: smartbcg" http://localhost:5000/api/stats
 
 ### Service Recovery Procedures
 
+**Note: As of September 20, 2025, the main crash loop issue has been fixed. Service should remain stable even with POS retries.**
+
 If service fails:
 1. Check monitor logs: `tail -100 logs/monitor.log`
 2. Check system journal: `journalctl -u printer-api.service -n 50`
 3. Verify no port conflicts: `sudo lsof -i:9100` and `sudo lsof -i:5000`
-4. Restart if needed: `sudo systemctl restart printer-api.service`
-5. Monitor will auto-restart on actual failures (not on schedule)
+4. Check for duplicate key errors in logs: `tail -50 logs/printer_api_error.log`
+5. Restart if needed: `sudo systemctl restart printer-api.service`
+6. Monitor will auto-restart on actual failures (not on schedule)
+
+**Common Issues (Post-Fix):**
+- **POS Retries**: Normal behavior - POS connects every 5 seconds, service handles gracefully
+- **Duplicate Warnings**: Expected - duplicate receipts logged as warnings, service continues
+- **Supabase Errors**: Check network connectivity and API keys if processing fails
 
 ## Best Practices for Contributors
 
